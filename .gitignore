@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+.next/
+dist/
+build/
+.expo/
+.turbo/
+*.tsbuildinfo
+
+# Env files (never commit real secrets)
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Expo
+.expo/
+web-build/
+expo-env.d.ts
+
+# Next.js
+.next/
+next-env.d.ts
+
+# Supabase local
+supabase/.branches
+supabase/.temp
+
+# OS / editor
+.DS_Store
+*.log
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Test
+coverage/
