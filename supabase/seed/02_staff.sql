@@ -6,6 +6,10 @@
 -- Every demo account uses the password 'password123' — never do this for a
 -- real deployment; it's only safe because these are fictional accounts on a
 -- local/dev database.
+--
+-- Every INSERT below is guarded (ON CONFLICT / WHERE NOT EXISTS, on each
+-- table's real primary key or unique constraint) so this file is safe to
+-- run more than once — see the note at the top of 01_stations.sql.
 -- ============================================================================
 
 INSERT INTO auth.users (
@@ -24,7 +28,8 @@ VALUES
   -- Station 2 employees
   ('00000000-0000-0000-0000-000000000000', '20000000-0000-0000-0000-000000000031', 'authenticated', 'authenticated', 'sara.wash@demo.gasstation.test', crypt('password123', gen_salt('bf')), now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Sara Mostafa","phone":"+201001111311"}'),
   -- Station 3 employees
-  ('00000000-0000-0000-0000-000000000000', '20000000-0000-0000-0000-000000000041', 'authenticated', 'authenticated', 'omar.wash@demo.gasstation.test', crypt('password123', gen_salt('bf')), now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Omar Khaled","phone":"+201001111411"}');
+  ('00000000-0000-0000-0000-000000000000', '20000000-0000-0000-0000-000000000041', 'authenticated', 'authenticated', 'omar.wash@demo.gasstation.test', crypt('password123', gen_salt('bf')), now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Omar Khaled","phone":"+201001111411"}')
+ON CONFLICT (id) DO NOTHING;
 
 -- The trigger on auth.users (handle_new_user) already created a CUSTOMER
 -- profile + customers row + loyalty account for every one of the above.
@@ -57,7 +62,8 @@ VALUES
   ('20000000-0000-0000-0000-000000000021', '2022-03-01', 'Day-shift car wash specialist.', 'متخصص غسيل سيارات في الوردية النهارية.'),
   ('20000000-0000-0000-0000-000000000022', '2023-01-15', 'Night-shift car wash specialist.', 'متخصص غسيل سيارات في الوردية الليلية.'),
   ('20000000-0000-0000-0000-000000000031', '2022-07-10', 'Car wash and oil change technician.', 'فني غسيل سيارات وتغيير زيت.'),
-  ('20000000-0000-0000-0000-000000000041', '2023-05-20', 'Car wash specialist, night shift.', 'متخصص غسيل سيارات، وردية ليلية.');
+  ('20000000-0000-0000-0000-000000000041', '2023-05-20', 'Car wash specialist, night shift.', 'متخصص غسيل سيارات، وردية ليلية.')
+ON CONFLICT (id) DO NOTHING;
 
 -- Station manager + employee assignments
 INSERT INTO public.employee_station_assignments (profile_id, station_id, is_primary)
@@ -68,7 +74,8 @@ VALUES
   ('20000000-0000-0000-0000-000000000021', '10000000-0000-0000-0000-000000000001', true),
   ('20000000-0000-0000-0000-000000000022', '10000000-0000-0000-0000-000000000001', true),
   ('20000000-0000-0000-0000-000000000031', '10000000-0000-0000-0000-000000000002', true),
-  ('20000000-0000-0000-0000-000000000041', '10000000-0000-0000-0000-000000000003', true);
+  ('20000000-0000-0000-0000-000000000041', '10000000-0000-0000-0000-000000000003', true)
+ON CONFLICT (profile_id, station_id) DO NOTHING;
 
 -- Working hours: Ahmed (day shift) and Karim (night shift, crosses
 -- midnight) cover Station 1's car wash across the whole day between them —
@@ -81,11 +88,23 @@ SELECT '20000000-0000-0000-0000-000000000022'::uuid, d, '20:00'::time, '08:00'::
 UNION ALL
 SELECT '20000000-0000-0000-0000-000000000031'::uuid, d, '08:00'::time, '22:00'::time FROM generate_series(0, 6) AS d
 UNION ALL
-SELECT '20000000-0000-0000-0000-000000000041'::uuid, d, '18:00'::time, '04:00'::time FROM generate_series(0, 6) AS d;
+SELECT '20000000-0000-0000-0000-000000000041'::uuid, d, '18:00'::time, '04:00'::time FROM generate_series(0, 6) AS d
+ON CONFLICT (employee_id, day_of_week) DO NOTHING;
 
 -- A couple of demo shifts, including one still active (no ended_at) to show
--- what "currently on shift" looks like.
+-- what "currently on shift" looks like. shifts has no natural unique
+-- constraint to key an ON CONFLICT off (the partial unique index only
+-- enforces "one active shift at a time"), so this uses an explicit
+-- WHERE NOT EXISTS guard instead — same idempotency goal, matched to what
+-- the table actually allows.
 INSERT INTO public.shifts (employee_id, station_id, started_at, ended_at)
-VALUES
-  ('20000000-0000-0000-0000-000000000021', '10000000-0000-0000-0000-000000000001', '2024-06-15 08:00:00+02', '2024-06-15 20:00:00+02'),
-  ('20000000-0000-0000-0000-000000000022', '10000000-0000-0000-0000-000000000001', '2024-06-15 20:00:00+02', NULL);
+SELECT v.employee_id, v.station_id, v.started_at, v.ended_at
+FROM (
+  VALUES
+    ('20000000-0000-0000-0000-000000000021'::uuid, '10000000-0000-0000-0000-000000000001'::uuid, '2024-06-15 08:00:00+02'::timestamptz, '2024-06-15 20:00:00+02'::timestamptz),
+    ('20000000-0000-0000-0000-000000000022'::uuid, '10000000-0000-0000-0000-000000000001'::uuid, '2024-06-15 20:00:00+02'::timestamptz, NULL::timestamptz)
+) AS v (employee_id, station_id, started_at, ended_at)
+WHERE NOT EXISTS (
+  SELECT 1 FROM public.shifts s
+  WHERE s.employee_id = v.employee_id AND s.station_id = v.station_id AND s.started_at = v.started_at
+);

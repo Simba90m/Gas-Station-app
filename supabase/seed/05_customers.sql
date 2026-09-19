@@ -4,6 +4,9 @@
 -- The signup trigger auto-creates each profile (role defaults to CUSTOMER,
 -- which is correct here — no promotion needed) + customers row + a
 -- zero-balance loyalty account.
+--
+-- Guarded with ON CONFLICT (id) DO NOTHING so this file is safe to run more
+-- than once — see the note at the top of 01_stations.sql.
 -- ============================================================================
 
 INSERT INTO auth.users (
@@ -15,4 +18,5 @@ VALUES
   ('00000000-0000-0000-0000-000000000000', '30000000-0000-0000-0000-000000000002', 'authenticated', 'authenticated', 'customer2@demo.gasstation.test', crypt('password123', gen_salt('bf')), now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Dina Mahmoud","phone":"+201501112222"}'),
   ('00000000-0000-0000-0000-000000000000', '30000000-0000-0000-0000-000000000003', 'authenticated', 'authenticated', 'customer3@demo.gasstation.test', crypt('password123', gen_salt('bf')), now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Mahmoud Ezzat","phone":"+201501112223"}'),
   ('00000000-0000-0000-0000-000000000000', '30000000-0000-0000-0000-000000000004', 'authenticated', 'authenticated', 'customer4@demo.gasstation.test', crypt('password123', gen_salt('bf')), now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Nour Hesham","phone":"+201501112224"}'),
-  ('00000000-0000-0000-0000-000000000000', '30000000-0000-0000-0000-000000000005', 'authenticated', 'authenticated', 'customer5@demo.gasstation.test', crypt('password123', gen_salt('bf')), now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Amira Salah","phone":"+201501112225"}');
+  ('00000000-0000-0000-0000-000000000000', '30000000-0000-0000-0000-000000000005', 'authenticated', 'authenticated', 'customer5@demo.gasstation.test', crypt('password123', gen_salt('bf')), now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Amira Salah","phone":"+201501112225"}')
+ON CONFLICT (id) DO NOTHING;

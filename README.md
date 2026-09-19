@@ -144,18 +144,51 @@ Not required for local development, but when you're ready to deploy:
    project's Settings → General).
 3. `npx supabase db push` — applies every migration in
    `supabase/migrations/` to that hosted project.
-4. Seed data is meant for local development only — don't run
-   `supabase/seed/` against a real project (it creates fictional demo
-   accounts and bookings).
+4. Optional: if this hosted project is a **development/demo** project (never
+   production), you can load the same fictional demo data local dev uses —
+   see "Seeding a hosted development project" below.
 5. Put the hosted project's URL and publishable key into `apps/admin/.env`
    the same way as above (Settings → API in the Supabase dashboard, under
    "Publishable key").
 
+### Seeding a hosted development project
+
+**Development/demo data only — never run this against a project with real
+customers.** It creates fictional accounts (`owner@demo.gasstation.test` and
+friends, all password `password123`) and fictional bookings/complaints/etc.
+— fine for a shared dev/staging project only you and your team can reach,
+never for production.
+
+```bash
+npx supabase db push --include-seed
+```
+
+`--include-seed` is the Supabase CLI's own built-in flag for this — it runs
+`supabase/seed/*.sql` (the same files, same order, `[db.seed]` in
+`supabase/config.toml`) against the linked project, right after applying any
+pending migrations. Nothing is hand-written or duplicated for the hosted
+case; it's the exact same seed data local dev has always used.
+
+Every insert in `supabase/seed/*.sql` is guarded (`ON CONFLICT ... DO
+NOTHING`, or an equivalent `WHERE NOT EXISTS` where a table has no usable
+unique constraint) — safe to run more than once. A second run touches
+nothing that already exists: no duplicate stations/employees/bookings, and
+(since `loyalty_transactions` inserts also award loyalty points via a
+trigger) no double-counted points either. It also never touches your own
+account — the demo data uses its own fixed, fictional IDs, completely
+separate from whatever real account you signed up with.
+
+If you already bootstrapped your own `OWNER` account (see "First admin on a
+real project" below), the seed additionally creates its own demo `OWNER`
+(`owner@demo.gasstation.test`) — both accounts coexist fine; use whichever
+you want to sign in with.
+
 ### First admin on a real project
 
-Seed data (with its fictional demo accounts) intentionally never runs
-against a real project, so a freshly created hosted project has **no**
-`OWNER`/`MANAGER` yet. New sign-ups always start as `CUSTOMER`
+Seed data never runs against a hosted project unless you explicitly opt in
+with `--include-seed` (see above) — by default, a freshly created hosted
+project has **no** `OWNER`/`MANAGER` at all. New sign-ups always start as
+`CUSTOMER`
 (`handle_new_user()` in `supabase/migrations/20240101000070_auth_handlers.sql`
 guarantees that — nothing at signup can grant a higher role), and
 promoting someone requires an *existing* `OWNER`/`MANAGER` — a

@@ -1,5 +1,9 @@
 -- ============================================================================
 -- DEMO / SEED DATA — offers.
+--
+-- Every INSERT below is guarded (ON CONFLICT ... DO NOTHING, on each table's
+-- real primary key or unique constraint) so this file is safe to run more
+-- than once — see the note at the top of 01_stations.sql.
 -- ============================================================================
 
 INSERT INTO public.offers (id, title_en, title_ar, description_en, description_ar, service_id, discount_type, discount_value, starts_at, ends_at, terms_en, terms_ar, is_active)
@@ -30,7 +34,8 @@ VALUES
     '2024-08-01 00:00:00+02', '2024-08-31 23:59:59+02',
     'Premium car wash only.', 'الغسيل الفاخر فقط.',
     true
-  );
+  )
+ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO public.offer_stations (offer_id, station_id)
 VALUES
@@ -39,4 +44,5 @@ VALUES
   ('70000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000001'),
   ('70000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000002'),
   ('70000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000001'),
-  ('70000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000003');
+  ('70000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000003')
+ON CONFLICT (offer_id, station_id) DO NOTHING;

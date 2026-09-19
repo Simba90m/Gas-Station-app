@@ -29,35 +29,47 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
   const todayRange = `[${start.toISOString()},${end.toISOString()})`;
   const nowIso = new Date().toISOString();
 
+  // Count-only queries select "id" rather than "*": complaints.internal_notes
+  // is deliberately not SELECT-granted to `authenticated` (see
+  // supabase/migrations/20240101000080_feedback_and_complaints.sql) to keep
+  // it out of customers' reach, and Postgres checks column privileges for
+  // the whole row before RLS even runs — so `select("*", ...)` against
+  // complaints always fails with a permission error, for every role, with
+  // or without any rows. "id" is selectable on every table here and is all
+  // a head/count request actually needs.
   const [stations, employees, todaysBookings, completedToday, openComplaints, activeOffers, queueSize, feedback] =
     await Promise.all([
-      supabase.from("stations").select("*", { count: "exact", head: true }).is("deleted_at", null),
+      supabase.from("stations").select("id", { count: "exact", head: true }).is("deleted_at", null),
       supabase
         .from("employees")
-        .select("*", { count: "exact", head: true })
+        .select("id", { count: "exact", head: true })
         .eq("is_active", true)
         .is("deleted_at", null),
-      supabase.from("bookings").select("*", { count: "exact", head: true }).overlaps("time_range", todayRange),
+      supabase.from("bookings").select("id", { count: "exact", head: true }).overlaps("time_range", todayRange),
       supabase
         .from("bookings")
-        .select("*", { count: "exact", head: true })
+        .select("id", { count: "exact", head: true })
         .overlaps("time_range", todayRange)
         .eq("status", "COMPLETED"),
-      supabase.from("complaints").select("*", { count: "exact", head: true }).not("status", "in", "(RESOLVED,CLOSED)"),
+      supabase.from("complaints").select("id", { count: "exact", head: true }).not("status", "in", "(RESOLVED,CLOSED)"),
       supabase
         .from("offers")
-        .select("*", { count: "exact", head: true })
+        .select("id", { count: "exact", head: true })
         .eq("is_active", true)
         .lte("starts_at", nowIso)
         .gte("ends_at", nowIso),
-      supabase.from("queue_entries").select("*", { count: "exact", head: true }).in("status", ["WAITING", "CALLED"]),
+      supabase.from("queue_entries").select("id", { count: "exact", head: true }).in("status", ["WAITING", "CALLED"]),
       supabase.from("feedback").select("rating"),
     ]);
 
   const errors: string[] = [];
-  const countOrNull = (label: string, result: { count: number | null; error: unknown }) => {
+  const countOrNull = (label: string, result: { count: number | null; error: { message: string } | null }) => {
     if (result.error) {
       errors.push(label);
+      // Logged server-side only (this runs in a Server Component) so the
+      // real Postgres/PostgREST reason is diagnosable without guessing —
+      // the UI still just says "Couldn't load: <label>", never the raw error.
+      console.error(`[dashboard metrics] ${label}: ${result.error.message}`);
       return null;
     }
     return result.count ?? 0;
