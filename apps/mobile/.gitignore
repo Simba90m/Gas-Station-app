@@ -7,7 +7,8 @@ node_modules/
 .expo/
 dist/
 web-build/
-expo-env.d.ts
+# expo-env.d.ts is intentionally committed, not ignored — see the comment
+# at the top of that file.
 
 # Native
 .kotlin/
