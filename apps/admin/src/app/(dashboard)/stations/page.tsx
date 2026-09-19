@@ -1,16 +1,40 @@
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/current-user";
 import { createClient } from "@/lib/supabase/server";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { StationsTable, type StationRow } from "./stations-table";
 
 export default async function StationsPage() {
   const [user, supabase] = await Promise.all([getCurrentUser(), createClient()]);
   const { data: stations, error } = await supabase
     .from("stations")
-    .select("id, name_en, address_en, is_active")
+    .select("id, name_en, address_en, phone, is_active")
     .is("deleted_at", null)
     .order("name_en");
+
+  // "Staff" count, per station — a lightweight operational signal on the
+  // list, not a real analytics feature (that's later-phase territory). Two
+  // flat queries + an in-memory join rather than an embedded select: this
+  // hand-scoped Database type (packages/types/src/database.ts) doesn't
+  // model foreign-key Relationships, so a typed embedded/join select isn't
+  // reliable here the way it would be with a real generated types file.
+  // Both queries are independently RLS-scoped, so a role with limited
+  // visibility (e.g. a station manager, for stations other than their own)
+  // naturally gets an incomplete rather than incorrect count — surfaced as
+  // "—" below, never a misleading 0.
+  const [{ data: assignments }, { data: activeEmployees }] = await Promise.all([
+    supabase.from("employee_station_assignments").select("station_id, profile_id"),
+    supabase.from("employees").select("id").eq("is_active", true).is("deleted_at", null),
+  ]);
+
+  const activeEmployeeIds = activeEmployees && new Set(activeEmployees.map((e) => e.id));
+  const stationRows: StationRow[] = (stations ?? []).map((station) => ({
+    ...station,
+    employeeCount:
+      assignments && activeEmployeeIds
+        ? assignments.filter((a) => a.station_id === station.id && activeEmployeeIds.has(a.profile_id)).length
+        : null,
+  }));
 
   const canCreate = user?.role === "OWNER" || user?.role === "MANAGER";
 
@@ -38,43 +62,7 @@ export default async function StationsPage() {
         </p>
       )}
 
-      <div className="mt-6 overflow-hidden rounded-lg border border-slate-200 bg-white">
-        <table className="w-full text-left text-sm">
-          <thead className="border-b border-slate-200 bg-slate-50 text-slate-500">
-            <tr>
-              <th className="px-4 py-3 font-medium">Name</th>
-              <th className="px-4 py-3 font-medium">Address</th>
-              <th className="px-4 py-3 font-medium">Status</th>
-              <th className="px-4 py-3" />
-            </tr>
-          </thead>
-          <tbody>
-            {stations?.map((station) => (
-              <tr key={station.id} className="border-b border-slate-100 last:border-0">
-                <td className="px-4 py-3 font-medium text-slate-900">{station.name_en}</td>
-                <td className="px-4 py-3 text-slate-600">{station.address_en}</td>
-                <td className="px-4 py-3">
-                  <Badge tone={station.is_active ? "green" : "gray"}>
-                    {station.is_active ? "Active" : "Inactive"}
-                  </Badge>
-                </td>
-                <td className="px-4 py-3 text-right">
-                  <Link href={`/stations/${station.id}`} className="text-sm font-medium text-slate-700 hover:underline">
-                    View
-                  </Link>
-                </td>
-              </tr>
-            ))}
-            {stations?.length === 0 && (
-              <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-sm text-slate-400">
-                  No stations yet.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      <StationsTable stations={stationRows} />
     </div>
   );
 }

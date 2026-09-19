@@ -301,6 +301,18 @@ stopping it.
 - MANAGER is still treated the same as OWNER (carried over from Phase 2 —
   see `docs/DATABASE_DESIGN.md`).
 
+## Station management: search and staff count (added after Phase 3)
+
+The stations list now also has a search box (filters by name/address) and
+a per-station staff count, alongside what Phase 3 already had (create/edit,
+activate/deactivate, operating hours including midnight-crossing windows
+like 22:00 → 04:00). Station *service* configuration and dedicated
+employee-assignment screens are still not built — see "Known limitations"
+above; they're natural additions on top of the same station detail page
+(one more `<Card>` section each), not a different architecture. Adding a
+4th, 5th, ... station needs nothing beyond the "New station" form already
+in the admin UI — no schema or code change.
+
 ## What's next (Phase 4)
 
 Customer mobile app foundation: station discovery and service browsing in

@@ -142,6 +142,23 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["station_operating_hours"]["Insert"]>;
         Relationships: [];
       };
+      employee_station_assignments: {
+        Row: {
+          id: string;
+          profile_id: string;
+          station_id: string;
+          is_primary: boolean;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          profile_id: string;
+          station_id: string;
+          is_primary?: boolean;
+        };
+        Update: Partial<Database["public"]["Tables"]["employee_station_assignments"]["Insert"]>;
+        Relationships: [];
+      };
       employees: {
         Row: {
           id: string;
