@@ -108,10 +108,13 @@ stored timestamp when needed, rather than requiring its own column now.
   JSON file (`/tsconfig.base.json` at the repo root) — wrapping that in its
   own package would add indirection with no benefit. See
   `packages/config/README.md`.
-- **`packages/ui` exists but is empty** until Phase 3, when the admin
-  dashboard's first real screen needs its first reusable component. Building
-  a shared component library with no screens to use it in would be guessing
-  at what it needs to look like.
+- **`packages/ui` is still empty as of Phase 3.** Its first real screens
+  (login, dashboard, station management) needed reusable components, but
+  React DOM (admin) and React Native (mobile) don't share JSX — those
+  components live in `apps/admin/src/components/ui/` instead. `packages/ui`
+  is now reserved for genuinely cross-platform-shareable *logic* (or
+  React Native Web-compatible components, if that route is taken later),
+  decided once Phase 4/5 mobile screens exist to compare against.
 
 ## Phase plan
 
@@ -121,8 +124,8 @@ run and test, per the project's development process. High-level sequence
 
 0. Planning & architecture *(this doc)*
 1. Repo setup, monorepo, tooling
-2. **Supabase database, migrations, seed data, auth, RLS** ← you are here
-3. Admin dashboard foundation + station management
+2. Supabase database, migrations, seed data, auth, RLS
+3. **Admin dashboard foundation + station management** ← you are here
 4. Customer mobile app foundation (browse stations/services)
 5. Employee mobile experience
 6. Booking engine (the availability/scheduling logic)

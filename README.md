@@ -12,15 +12,15 @@ New to this project? Read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 first — it explains *why* things are built this way, written for someone
 without a software background.
 
-## Current status: Phase 2 — Database, auth, RLS
+## Current status: Phase 3 — Admin dashboard foundation & station management
 
 | Phase | Status |
 |---|---|
 | 0. Planning & architecture | ✅ Done |
 | 1. Repo setup, monorepo, tooling | ✅ Done |
-| 2. Database, auth, RLS | ✅ Done (this commit) |
-| 3. Admin dashboard foundation | ⬜ Next |
-| 4. Customer mobile app foundation | ⬜ Not started |
+| 2. Database, auth, RLS | ✅ Done |
+| 3. Admin dashboard foundation & station management | ✅ Done (this commit) |
+| 4. Customer mobile app foundation | ⬜ Next |
 | 5+ | ⬜ Not started |
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full phase plan.
@@ -32,8 +32,8 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full phase plan.
   /admin    Next.js owner/manager dashboard
   /mobile   Expo app — customer app + employee mode
 /packages
-  /types    Shared TypeScript types (roles now; DB-derived domain types from Phase 2)
-  /utils    Shared business logic (timezone/currency constants now; booking engine from Phase 6)
+  /types    Shared TypeScript types — roles + a hand-scoped Database type (see packages/types/src/database.ts)
+  /utils    Shared business logic (timezone/currency constants, operating-day boundary math; booking engine from Phase 6)
   /i18n     Centralized English/Arabic strings, typed, RTL-aware
   /ui       Reserved for shared UI components (starts Phase 3)
   /config   Not a package — see packages/config/README.md
@@ -120,8 +120,9 @@ Leave `SUPABASE_SERVICE_ROLE_KEY` unset unless you're writing a trusted
 server-side/admin script — it bypasses Row Level Security entirely and must
 never be shipped inside either app.
 
-Neither app actually calls Supabase yet (no screens use it) — that starts
-in Phase 3/4. This step just gets the connection ready.
+`apps/admin` requires these two values to even start (it fails fast with a
+clear error if they're missing — see `apps/admin/src/lib/env.ts`).
+`apps/mobile` doesn't call Supabase yet (Phase 4).
 
 ### Using a real (hosted) Supabase project instead
 
@@ -167,41 +168,75 @@ pnpm dev:mobile
 
 You can also run both at once with `pnpm dev`.
 
-## What to test right now (Phase 2)
+## Using the admin dashboard
 
-- [ ] `npx supabase start` succeeds and prints local URLs/keys
-- [ ] `npx supabase db reset` applies all migrations and seed data with no errors
-- [ ] Studio (http://127.0.0.1:54323) shows 3 stations, staff, services, bookings, etc.
+Once `.env` is filled in (see above) and `pnpm dev:admin` is running:
+
+1. Open http://localhost:3000 — it redirects to `/login`.
+2. Sign in with a seeded staff account, e.g. `owner@demo.gasstation.test` /
+   `password123` (full list above). Customer and employee accounts are
+   correctly refused here — they get a clear message and are signed back
+   out, not a confusing empty dashboard.
+3. **Dashboard** (`/`) shows real counts — today's bookings, open
+   complaints, average rating, etc. — queried live from Supabase, scoped by
+   Row Level Security to whatever the signed-in role can see. A metric
+   shows "Not enough data" rather than a fake `0` when there's genuinely
+   nothing to show yet (e.g. no feedback submitted).
+4. **Stations** (`/stations`) lists every station; **New station**
+   (owner/manager only — station managers get a real error from the
+   database, not just a hidden button, if they try) and each station's
+   detail page let you edit its details, activate/deactivate it, and set
+   its weekly operating hours (including hours that cross midnight, e.g.
+   22:00 → 04:00 — try it against the seeded stations to see it accepted).
+
+Try signing in as `manager.station1@demo.gasstation.test` afterward to see
+the difference: the dashboard's counts are the same (most of those tables
+aren't station-scoped by role), but editing Station 2 or Station 3's
+details correctly fails — Postgres RLS, not the UI, is what's actually
+stopping it.
+
+## What to test right now (Phase 3)
+
+- [ ] `npx supabase start` && `npx supabase db reset` — clean local database
 - [ ] `npx supabase test db` — all pgTAP tests pass
-- [ ] `pnpm install && pnpm typecheck` still passes for both apps and all shared packages
-- [ ] Signing in as `owner@demo.gasstation.test` (e.g. via Studio's SQL editor or a REST call) can see all 3 stations' bookings; signing in as `customer1@demo.gasstation.test` can only see their own
+- [ ] `pnpm install && pnpm typecheck && pnpm lint` — clean across all 5 packages
+- [ ] `pnpm build --filter=@gas-station/admin` — production build succeeds
+- [ ] Log in as `owner@demo.gasstation.test` → dashboard shows real numbers; create a station; edit a station; set its hours with a midnight-crossing window (e.g. 22:00 → 04:00)
+- [ ] Log in as `manager.station1@demo.gasstation.test` → can edit Station 1, cannot edit Station 2/3 (real RLS error, not a hidden button)
+- [ ] Log in as `customer1@demo.gasstation.test` → refused with a clear message, not let into the dashboard
+- [ ] Sign out via the header button returns to `/login`
 
-There are still no real app screens — that starts in Phase 3/4. This phase
-is entirely the database foundation underneath them.
+## Known limitations (Phase 3)
 
-## Known limitations (Phase 2)
+- No employee/customer management, services, bookings, offers, complaints,
+  or analytics screens yet — those are their own later phases (5–11); this
+  phase is the dashboard's auth + layout foundation and station management
+  specifically, per the brief's Phase 3 scope.
+- Station *service* configuration (which services a station offers, car
+  wash bays, service-specific hours) isn't in the admin UI yet — the
+  database already supports it (`station_services`, `service_resources`,
+  `service_operating_hours`), but configuring it through screens is later
+  phase territory, not "station management" in the narrow Phase 3 sense.
+- Admin UI strings are English-only for now — `packages/i18n` exists and
+  is ready, but wiring a bilingual/RTL admin dashboard wasn't done in this
+  phase to keep scope to "dashboard foundation + station management";
+  Arabic *input* (station name/address in Arabic) is already supported in
+  the forms, since that's data, not UI chrome.
+- `packages/types/src/database.ts` is hand-written and scoped to exactly
+  what Phase 3 queries (documented at the top of that file) — extend it as
+  later phases need more tables, or replace it with a real generated file
+  once Docker is available (`pnpm db:types`).
+- MANAGER is still treated the same as OWNER (carried over from Phase 2 —
+  see `docs/DATABASE_DESIGN.md`).
 
-- No real app screens yet — neither app calls Supabase
-- MANAGER is currently treated the same as OWNER (all-station access) —
-  the brief describes a narrower "assigned management scope" but doesn't
-  define a table for it; documented in `docs/DATABASE_DESIGN.md` and the
-  migration comments as a decision to revisit if a real scoping need shows up
-- Cancellation-deadline configurability ("cancel up to X minutes before
-  the appointment") isn't enforced yet — that's booking-engine logic (Phase 6)
-- No automated TypeScript types generated from the schema yet — needs
-  Docker running locally; see `docs/DATABASE_DESIGN.md`
-- Real push/email notification delivery isn't built — `notifications`/
-  `notification_recipients` exist as a data model only (Phase 9)
+## What's next (Phase 4)
 
-## What's next (Phase 3)
-
-Admin dashboard foundation: Supabase Auth wired into `apps/admin`, a login
-screen, and station management (list/create/edit stations) — the first
-real screens built on top of this phase's schema and RLS policies.
+Customer mobile app foundation: station discovery and service browsing in
+`apps/mobile`, built on the same database and RLS policies.
 
 ## Tech stack
 
 - **Mobile:** React Native, Expo, TypeScript, Expo Router, TanStack Query, React Hook Form, Zod (query/form/validation libs added when Phase 4 first needs them)
 - **Backend:** Supabase (PostgreSQL, Auth, Storage, Realtime, Row Level Security)
-- **Admin:** Next.js, TypeScript, Tailwind CSS
+- **Admin:** Next.js (App Router), TypeScript, Tailwind CSS, `@supabase/ssr` for cookie-based auth, Zod for input validation
 - **Monorepo:** pnpm workspaces + Turborepo

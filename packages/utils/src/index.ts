@@ -1,6 +1,7 @@
 export * from "./constants";
+export * from "./operating-day";
 
-// The booking-availability engine (station hours, service hours, employee
-// hours, midnight-crossing schedules, resource/bay conflicts) belongs here.
-// It's built in Phase 6 against the real database schema from Phase 2, with
-// automated tests, rather than speculatively now.
+// The full booking-availability engine (service hours, employee hours,
+// resource/bay conflicts, slot generation) belongs here too. It's built in
+// Phase 6 against the real database schema from Phase 2, with automated
+// tests, rather than speculatively now.

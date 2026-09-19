@@ -5,6 +5,11 @@ Gas-Station-app/
 ├── apps/
 │   ├── admin/                  Next.js dashboard (owner/manager/station manager)
 │   │   ├── src/app/            Pages (Next.js "App Router" — one folder = one URL)
+│   │   │   ├── login/          Public login page + its server action
+│   │   │   └── (dashboard)/    Auth-protected: layout does the access check, everything nested needs it
+│   │   ├── src/components/ui/  Admin-local reusable components (Button, Input, Card, ...)
+│   │   ├── src/lib/            Supabase client setup (client/server/middleware), env validation
+│   │   ├── middleware.ts       Refreshes the Supabase session cookie on every request
 │   │   ├── next.config.ts
 │   │   └── package.json
 │   │
@@ -15,15 +20,16 @@ Gas-Station-app/
 │       └── package.json
 │
 ├── packages/                   Code shared between apps/admin and apps/mobile
-│   ├── types/                  Shared TypeScript types (e.g. user roles)
-│   ├── utils/                  Shared business logic (timezone, currency, later: booking engine)
+│   ├── types/                  Shared TypeScript types: user roles + a hand-scoped Database type
+│   ├── utils/                  Shared business logic: timezone/currency constants, operating-day boundary math
 │   ├── i18n/                   English + Arabic strings, typed so a missing translation is a build error
-│   ├── ui/                     Reserved for shared components (empty until Phase 3)
+│   ├── ui/                     Reserved for shared components (still empty as of Phase 3 — see its own README)
 │   └── config/                 Not a real package — explains where shared config actually lives
 │
 ├── supabase/
 │   ├── migrations/             SQL files that build the database, in order (Phase 2)
-│   └── seed/                   Demo data: 3 Alexandria stations, sample bookings, etc. (Phase 2)
+│   ├── seed/                   Demo data: 3 Alexandria stations, sample bookings, etc. (Phase 2)
+│   └── tests/database/         pgTAP tests for the schema's critical rules (Phase 2)
 │
 ├── docs/                       This folder — planning and architecture docs
 │

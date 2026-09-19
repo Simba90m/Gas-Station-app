@@ -1,9 +1,9 @@
 export * from "./roles";
+export * from "./database";
 
-// The database schema is now finalized (Phase 2 — see supabase/migrations/),
-// but generating TypeScript types from it needs a running Supabase instance
-// (`npx supabase gen types typescript --local`, which needs Docker — not
-// available in this development environment). Run that command yourself
-// once you have Docker running locally, and add the output here as
-// database.ts, rather than hand-written domain types that could drift from
-// the actual schema.
+// database.ts is hand-written and scoped to what Phase 3 actually queries
+// (see the comment at the top of that file) — it is NOT the full schema.
+// Once Docker is available, run `pnpm db:types` to replace it with the real
+// generated file (`supabase gen types typescript --local`), which needs a
+// running Supabase instance and isn't available in this development
+// environment.

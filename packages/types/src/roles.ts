@@ -19,3 +19,16 @@ export const USER_ROLES: readonly UserRole[] = [
   "EMPLOYEE",
   "CUSTOMER",
 ];
+
+/**
+ * Roles allowed into the admin dashboard (apps/admin) — matches the RLS
+ * policies' `is_owner_or_manager()` / `is_station_staff()` staff notion.
+ * EMPLOYEE and CUSTOMER use the mobile app instead. This is a UX gate
+ * (redirect away, show a clear message); the real enforcement is still
+ * each table's RLS policy.
+ */
+export const ADMIN_ROLES: readonly UserRole[] = ["OWNER", "MANAGER", "STATION_MANAGER"];
+
+export function isAdminRole(role: UserRole): boolean {
+  return ADMIN_ROLES.includes(role);
+}
