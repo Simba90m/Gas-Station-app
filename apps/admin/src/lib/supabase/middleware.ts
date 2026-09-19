@@ -13,7 +13,7 @@ import { env } from "../env";
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
-  const supabase = createServerClient<Database>(env.supabaseUrl(), env.supabaseAnonKey(), {
+  const supabase = createServerClient<Database>(env.supabaseUrl(), env.supabasePublishableKey(), {
     cookies: {
       getAll() {
         return request.cookies.getAll();

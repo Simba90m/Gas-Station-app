@@ -104,25 +104,35 @@ use a shared password like this — this is exclusively for local development.
 ### Connect the apps to it
 
 ```bash
-cp .env.example .env
+cp apps/admin/.env.example apps/admin/.env
 ```
 
-Fill in `.env` with the local values `supabase start` printed:
+**This must be `apps/admin/.env`, not a `.env` at the repo root** — Next.js
+only loads `.env` files from the directory `next.config.ts` is in, so a
+root-level `.env` is silently ignored by `pnpm dev:admin`. (The root
+`.env.example` is a reference overview of every env var used across the
+project, not something either app actually reads — see the comment at the
+top of that file.)
+
+Fill in `apps/admin/.env` with the local values `supabase start` printed:
 
 ```
 NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
-NEXT_PUBLIC_SUPABASE_ANON_KEY=<the anon key printed above>
-EXPO_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
-EXPO_PUBLIC_SUPABASE_ANON_KEY=<the anon key printed above>
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<the anon key printed above>
 ```
+
+(The local CLI prints this value labeled "anon key" — it's the same kind
+of key a hosted Supabase project calls the publishable key; use it here
+either way.)
 
 Leave `SUPABASE_SERVICE_ROLE_KEY` unset unless you're writing a trusted
 server-side/admin script — it bypasses Row Level Security entirely and must
 never be shipped inside either app.
 
-`apps/admin` requires these two values to even start (it fails fast with a
-clear error if they're missing — see `apps/admin/src/lib/env.ts`).
-`apps/mobile` doesn't call Supabase yet (Phase 4).
+`apps/admin` requires the two `NEXT_PUBLIC_*` values above to even start
+(it fails fast with a clear error if they're missing — see
+`apps/admin/src/lib/env.ts`). `apps/mobile` doesn't call Supabase yet
+(Phase 4).
 
 ### Using a real (hosted) Supabase project instead
 
@@ -137,8 +147,9 @@ Not required for local development, but when you're ready to deploy:
 4. Seed data is meant for local development only — don't run
    `supabase/seed/` against a real project (it creates fictional demo
    accounts and bookings).
-5. Put the hosted project's URL/anon key into `.env` the same way as above
-   (Settings → API in the Supabase dashboard).
+5. Put the hosted project's URL and publishable key into `apps/admin/.env`
+   the same way as above (Settings → API in the Supabase dashboard, under
+   "Publishable key").
 
 ### Running the database tests
 
@@ -170,7 +181,7 @@ You can also run both at once with `pnpm dev`.
 
 ## Using the admin dashboard
 
-Once `.env` is filled in (see above) and `pnpm dev:admin` is running:
+Once `apps/admin/.env` is filled in (see above) and `pnpm dev:admin` is running:
 
 1. Open http://localhost:3000 — it redirects to `/login`.
 2. Sign in with a seeded staff account, e.g. `owner@demo.gasstation.test` /

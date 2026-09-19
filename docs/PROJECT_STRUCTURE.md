@@ -10,6 +10,7 @@ Gas-Station-app/
 │   │   ├── src/components/ui/  Admin-local reusable components (Button, Input, Card, ...)
 │   │   ├── src/lib/            Supabase client setup (client/server/middleware), env validation
 │   │   ├── middleware.ts       Refreshes the Supabase session cookie on every request
+│   │   ├── .env.example        The REAL, loaded template — copy to apps/admin/.env (see note below)
 │   │   ├── next.config.ts
 │   │   └── package.json
 │   │
@@ -37,8 +38,16 @@ Gas-Station-app/
 ├── pnpm-workspace.yaml         Tells pnpm which folders are packages
 ├── turbo.json                  Runs scripts across all apps/packages efficiently
 ├── tsconfig.base.json          Shared TypeScript compiler settings for packages/*
-└── .env.example                Every environment variable the project uses, with placeholder values
+└── .env.example                Reference overview of every env var — NOT loaded by either app (see below)
 ```
+
+## Why is there a `.env.example` at the root AND in `apps/admin/`?
+
+Next.js and Expo each only load `.env` files from their own app directory,
+never from a monorepo root — so a `.env` at the repo root is silently
+ignored. `apps/admin/.env.example` is the real template to copy (to
+`apps/admin/.env`); the root one is just a reference list of every env var
+used anywhere in the project, for a quick overview.
 
 ## Why does `apps/mobile` need a custom `metro.config.js`?
 

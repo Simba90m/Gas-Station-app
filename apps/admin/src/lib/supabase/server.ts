@@ -11,7 +11,7 @@ import { env } from "../env";
 export async function createClient() {
   const cookieStore = await cookies();
 
-  return createServerClient<Database>(env.supabaseUrl(), env.supabaseAnonKey(), {
+  return createServerClient<Database>(env.supabaseUrl(), env.supabasePublishableKey(), {
     cookies: {
       getAll() {
         return cookieStore.getAll();
