@@ -150,6 +150,15 @@ migration file's comments:
    table list only specifies `offer_stations`; "applicable services" is a
    single nullable `offers.service_id` column (`NULL` = every service at
    the applicable stations) rather than inventing a second join table.
+3. **`service_operating_hours` moved one level down too (Phase 5).**
+   Originally keyed by `service_id` (global — every station offering a
+   service shared one schedule), matching the same mistake `service_resources`
+   avoided from the start (#1 above). Phase 5 needs two stations to run the
+   same service on different hours, which a global schedule structurally
+   can't represent, so `service_operating_hours.station_service_id` now
+   references `station_services` instead — see
+   `supabase/migrations/20240101000190_station_scoped_service_hours.sql`
+   for the fix and its backfill.
 
 ## Known simplification: MANAGER's scope
 

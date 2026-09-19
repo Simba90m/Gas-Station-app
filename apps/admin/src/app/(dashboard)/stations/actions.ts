@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { stationFormSchema, type HourRowInput } from "./schema";
+import { stationFormSchema, validateHourRows, type HourRowInput } from "./schema";
 
 export interface StationFormState {
   error?: string;
@@ -81,14 +81,8 @@ export async function upsertStationHoursAction(
   stationId: string,
   rows: HourRowInput[],
 ): Promise<{ error?: string }> {
-  for (const row of rows) {
-    if (row.mode === "custom" && (!row.opens_at || !row.closes_at)) {
-      return { error: "Set both an opening and closing time, or choose Closed / 24 hours instead." };
-    }
-    if (row.mode === "custom" && row.opens_at === row.closes_at) {
-      return { error: "Opening and closing time can't be the same — for 24 hours, use the 24 Hours option instead." };
-    }
-  }
+  const validationError = validateHourRows(rows);
+  if (validationError) return { error: validationError };
 
   const payload = rows.map((row) => ({
     station_id: stationId,

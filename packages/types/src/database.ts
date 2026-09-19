@@ -44,6 +44,8 @@ export type IssueCategory =
 
 export type DiscountType = "PERCENTAGE" | "FIXED_AMOUNT";
 
+export type ResourceStatus = "AVAILABLE" | "MAINTENANCE" | "INACTIVE";
+
 export interface Database {
   public: {
     Tables: {
@@ -140,6 +142,107 @@ export interface Database {
           closes_at?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["station_operating_hours"]["Insert"]>;
+        Relationships: [];
+      };
+      services: {
+        Row: {
+          id: string;
+          name_en: string;
+          name_ar: string;
+          description_en: string | null;
+          description_ar: string | null;
+          image_url: string | null;
+          base_price: number;
+          duration_minutes: number;
+          requires_employee_selection: boolean;
+          requires_resource: boolean;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          name_en: string;
+          name_ar: string;
+          description_en?: string | null;
+          description_ar?: string | null;
+          image_url?: string | null;
+          base_price: number;
+          duration_minutes: number;
+          requires_employee_selection?: boolean;
+          requires_resource?: boolean;
+          is_active?: boolean;
+        };
+        Update: Partial<Database["public"]["Tables"]["services"]["Insert"]>;
+        Relationships: [];
+      };
+      station_services: {
+        Row: {
+          id: string;
+          station_id: string;
+          service_id: string;
+          price_override: number | null;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          station_id: string;
+          service_id: string;
+          price_override?: number | null;
+          is_active?: boolean;
+        };
+        Update: Partial<Database["public"]["Tables"]["station_services"]["Insert"]>;
+        Relationships: [];
+      };
+      // Keyed by station_service_id (a specific station's offering of a
+      // service), not service_id — see
+      // supabase/migrations/20240101000190_station_scoped_service_hours.sql
+      // and docs/DATABASE_DESIGN.md "Changes from the original plan" #3.
+      service_operating_hours: {
+        Row: {
+          id: string;
+          station_service_id: string;
+          day_of_week: number;
+          is_closed: boolean;
+          is_24_hours: boolean;
+          opens_at: string | null;
+          closes_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          station_service_id: string;
+          day_of_week: number;
+          is_closed?: boolean;
+          is_24_hours?: boolean;
+          opens_at?: string | null;
+          closes_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["service_operating_hours"]["Insert"]>;
+        Relationships: [];
+      };
+      service_resources: {
+        Row: {
+          id: string;
+          station_service_id: string;
+          name_en: string;
+          name_ar: string;
+          status: ResourceStatus;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          station_service_id: string;
+          name_en: string;
+          name_ar: string;
+          status?: ResourceStatus;
+        };
+        Update: Partial<Database["public"]["Tables"]["service_resources"]["Insert"]>;
         Relationships: [];
       };
       employee_station_assignments: {

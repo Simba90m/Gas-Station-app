@@ -38,3 +38,20 @@ export interface HourRowInput {
 }
 
 export const DAY_LABELS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
+
+/**
+ * Shared by upsertStationHoursAction and upsertServiceHoursAction
+ * (stations/[id]/services/actions.ts) — same row shape, same rules.
+ * Returns an error message, or undefined if every row is valid.
+ */
+export function validateHourRows(rows: HourRowInput[]): string | undefined {
+  for (const row of rows) {
+    if (row.mode === "custom" && (!row.opens_at || !row.closes_at)) {
+      return "Set both an opening and closing time, or choose Closed / 24 hours instead.";
+    }
+    if (row.mode === "custom" && row.opens_at === row.closes_at) {
+      return "Opening and closing time can't be the same — for 24 hours, use the 24 Hours option instead.";
+    }
+  }
+  return undefined;
+}

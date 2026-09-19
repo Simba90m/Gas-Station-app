@@ -2,7 +2,6 @@
 
 import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
-import { upsertStationHoursAction } from "./actions";
 import { DAY_LABELS, type HourRowInput, type HoursMode } from "./schema";
 
 export interface InitialHourRow {
@@ -26,7 +25,13 @@ function toRow(existing: InitialHourRow | undefined, dayOfWeek: number): HourRow
   };
 }
 
-export function HoursEditor({ stationId, initialRows }: { stationId: string; initialRows: InitialHourRow[] }) {
+interface HoursEditorProps {
+  initialRows: InitialHourRow[];
+  /** Persists the full week of rows — e.g. upsertStationHoursAction(stationId, rows) or upsertServiceHoursAction(stationServiceId, rows). */
+  onSave: (rows: HourRowInput[]) => Promise<{ error?: string }>;
+}
+
+export function HoursEditor({ initialRows, onSave }: HoursEditorProps) {
   const [rows, setRows] = useState<HourRowInput[]>(() =>
     DAY_LABELS.map((_, dayOfWeek) => toRow(initialRows.find((r) => r.day_of_week === dayOfWeek), dayOfWeek)),
   );
@@ -42,7 +47,7 @@ export function HoursEditor({ stationId, initialRows }: { stationId: string; ini
     setError(undefined);
     setSavedAt(undefined);
     startTransition(async () => {
-      const result = await upsertStationHoursAction(stationId, rows);
+      const result = await onSave(rows);
       if (result.error) {
         setError(result.error);
       } else {

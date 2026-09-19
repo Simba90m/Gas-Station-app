@@ -39,28 +39,58 @@ VALUES
   ('50000000-0000-0000-0000-000000000035', '10000000-0000-0000-0000-000000000003', '40000000-0000-0000-0000-000000000005', NULL)
 ON CONFLICT (id) DO NOTHING;
 
--- Fuel: 24 hours, every station that offers it.
-INSERT INTO public.service_operating_hours (service_id, day_of_week, is_24_hours)
-SELECT '40000000-0000-0000-0000-000000000001', d, true FROM generate_series(0, 6) AS d
-ON CONFLICT (service_id, day_of_week) DO NOTHING;
+-- Operating hours are per station_service (Phase 5 — see
+-- docs/DATABASE_DESIGN.md "Changes from the original plan" #3), not per
+-- global service, so every row below names the specific station_services
+-- id(s) it applies to rather than the catalog service. Every station
+-- currently offering a given service happens to share the same hours here
+-- — that's this seed data's choice, not a schema limitation; a real admin
+-- can give any one station's offering different hours via the admin UI.
 
--- Car Wash (both tiers): 12:00 PM - 4:00 AM — crosses midnight.
-INSERT INTO public.service_operating_hours (service_id, day_of_week, opens_at, closes_at)
+-- Fuel: 24 hours, every station that offers it.
+INSERT INTO public.service_operating_hours (station_service_id, day_of_week, is_24_hours)
+SELECT id, d, true
+FROM public.station_services, generate_series(0, 6) AS d
+WHERE id IN (
+  '50000000-0000-0000-0000-000000000011', -- Station 1 fuel
+  '50000000-0000-0000-0000-000000000021', -- Station 2 fuel
+  '50000000-0000-0000-0000-000000000031'  -- Station 3 fuel
+)
+ON CONFLICT (station_service_id, day_of_week) DO NOTHING;
+
+-- Car Wash (both tiers, every station offering either): 12:00 PM - 4:00 AM — crosses midnight.
+INSERT INTO public.service_operating_hours (station_service_id, day_of_week, opens_at, closes_at)
 SELECT id, d, '12:00'::time, '04:00'::time
-FROM public.services, generate_series(0, 6) AS d
-WHERE id IN ('40000000-0000-0000-0000-000000000002', '40000000-0000-0000-0000-000000000003')
-ON CONFLICT (service_id, day_of_week) DO NOTHING;
+FROM public.station_services, generate_series(0, 6) AS d
+WHERE id IN (
+  '50000000-0000-0000-0000-000000000012', -- Station 1 standard wash
+  '50000000-0000-0000-0000-000000000013', -- Station 1 premium wash
+  '50000000-0000-0000-0000-000000000022', -- Station 2 standard wash
+  '50000000-0000-0000-0000-000000000032', -- Station 3 standard wash
+  '50000000-0000-0000-0000-000000000033'  -- Station 3 premium wash
+)
+ON CONFLICT (station_service_id, day_of_week) DO NOTHING;
 
 -- Oil Change: 10:00 AM - 2:00 AM — also crosses midnight.
-INSERT INTO public.service_operating_hours (service_id, day_of_week, opens_at, closes_at)
-SELECT '40000000-0000-0000-0000-000000000004', d, '10:00'::time, '02:00'::time FROM generate_series(0, 6) AS d
-ON CONFLICT (service_id, day_of_week) DO NOTHING;
+INSERT INTO public.service_operating_hours (station_service_id, day_of_week, opens_at, closes_at)
+SELECT id, d, '10:00'::time, '02:00'::time
+FROM public.station_services, generate_series(0, 6) AS d
+WHERE id IN (
+  '50000000-0000-0000-0000-000000000014', -- Station 1 oil change
+  '50000000-0000-0000-0000-000000000024'  -- Station 2 oil change
+)
+ON CONFLICT (station_service_id, day_of_week) DO NOTHING;
 
 -- Café: 5:00 PM - 4:00 AM — also crosses midnight, matches the brief's
 -- late-night example exactly.
-INSERT INTO public.service_operating_hours (service_id, day_of_week, opens_at, closes_at)
-SELECT '40000000-0000-0000-0000-000000000005', d, '17:00'::time, '04:00'::time FROM generate_series(0, 6) AS d
-ON CONFLICT (service_id, day_of_week) DO NOTHING;
+INSERT INTO public.service_operating_hours (station_service_id, day_of_week, opens_at, closes_at)
+SELECT id, d, '17:00'::time, '04:00'::time
+FROM public.station_services, generate_series(0, 6) AS d
+WHERE id IN (
+  '50000000-0000-0000-0000-000000000015', -- Station 1 café
+  '50000000-0000-0000-0000-000000000035'  -- Station 3 café
+)
+ON CONFLICT (station_service_id, day_of_week) DO NOTHING;
 
 -- Car wash bays — configurable per station, per the brief ("Station 1: Bay
 -- 1, Bay 2, Bay 3 ... configurable per station").
