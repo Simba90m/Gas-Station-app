@@ -1,7 +1,14 @@
 {
+  // Deliberately excludes *.test.ts (see tsconfig.test.json): the
+  // "typecheck" script built from this config is part of the critical
+  // pnpm typecheck pipeline every package must pass, so it must never
+  // depend on resolving a devDependency-only test framework (vitest) to
+  // succeed. Test files are still type-checked — just via a separate,
+  // non-blocking path (`pnpm typecheck:tests`).
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "noEmit": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts"]
 }

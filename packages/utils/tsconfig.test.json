@@ -1,0 +1,10 @@
+{
+  // Type-checks test files separately from production code (tsconfig.json)
+  // — run explicitly via `pnpm typecheck:tests`, not part of the main
+  // `pnpm typecheck` pipeline. See the comment in tsconfig.json for why.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": ["src/**/*.test.ts"]
+}
