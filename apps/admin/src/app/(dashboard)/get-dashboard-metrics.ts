@@ -63,13 +63,18 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
     ]);
 
   const errors: string[] = [];
-  const countOrNull = (label: string, result: { count: number | null; error: { message: string } | null }) => {
+  const countOrNull = (label: string, result: { count: number | null; error: object | null }) => {
     if (result.error) {
       errors.push(label);
       // Logged server-side only (this runs in a Server Component) so the
       // real Postgres/PostgREST reason is diagnosable without guessing —
       // the UI still just says "Couldn't load: <label>", never the raw error.
-      console.error(`[dashboard metrics] ${label}: ${result.error.message}`);
+      // Dumping every own property (not just .message) matters here: a
+      // PostgrestError parsed from an empty response body (which is what a
+      // failed head:true/HEAD request gets — HTTP HEAD responses have no
+      // body to carry the JSON error details PostgREST would normally send)
+      // can have an empty .message while still carrying a real .code.
+      console.error(`[dashboard metrics] ${label}:`, JSON.stringify(result.error, Object.getOwnPropertyNames(result.error)));
       return null;
     }
     return result.count ?? 0;
