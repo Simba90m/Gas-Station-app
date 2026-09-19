@@ -22,13 +22,27 @@
 -- station currently has configured (nothing changes for any station until
 -- an admin deliberately edits one going forward). A no-op on a project
 -- with no rows yet (e.g. before seeding).
+--
+-- The fan-out INSERT below writes new rows into this same table before
+-- service_id is dropped, so two of its still-active constraints have to be
+-- relaxed first: NOT NULL (the new rows don't set service_id — the insert
+-- would otherwise fail exactly as it did the first time this migration
+-- ran) and UNIQUE(service_id, day_of_week) (fanning one service out to
+-- several stations means several new rows can share the same service_id +
+-- day_of_week). Inserting the new rows with service_id left NULL clears
+-- both: a NOT NULL column that's been relaxed accepts it, and Postgres's
+-- default NULLS DISTINCT behavior means no two NULLs ever collide under a
+-- UNIQUE constraint, however many rows share one. The original rows keep
+-- their real service_id until they're deleted a few statements down, so
+-- nothing about them is affected either way.
 -- ============================================================================
 
 ALTER TABLE public.service_operating_hours
   ADD COLUMN station_service_id uuid REFERENCES public.station_services (id) ON DELETE CASCADE;
+ALTER TABLE public.service_operating_hours ALTER COLUMN service_id DROP NOT NULL;
 
-INSERT INTO public.service_operating_hours (station_service_id, day_of_week, is_closed, is_24_hours, opens_at, closes_at)
-SELECT ss.id, soh.day_of_week, soh.is_closed, soh.is_24_hours, soh.opens_at, soh.closes_at
+INSERT INTO public.service_operating_hours (station_service_id, service_id, day_of_week, is_closed, is_24_hours, opens_at, closes_at)
+SELECT ss.id, NULL, soh.day_of_week, soh.is_closed, soh.is_24_hours, soh.opens_at, soh.closes_at
 FROM public.service_operating_hours soh
 JOIN public.station_services ss ON ss.service_id = soh.service_id
 WHERE soh.station_service_id IS NULL;

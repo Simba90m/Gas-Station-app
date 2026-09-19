@@ -5,8 +5,23 @@
 -- staff visibility must follow station_services/stations the same way
 -- service_resources already does, and writes must still be
 -- OWNER/MANAGER-only (unchanged restrictiveness — only the key changed).
+--
+-- Also asserts the migration's END STATE directly (no service_id column,
+-- station_service_id required) — this migration originally failed on the
+-- hosted project with "null value in column service_id ... violates
+-- not-null constraint", from a fan-out INSERT into this same table that
+-- didn't account for service_id still being NOT NULL (and still
+-- UNIQUE(service_id, day_of_week)) at that point in the file. pgTAP runs
+-- against an already-fully-migrated database, so it can't replay that
+-- backfill against the old shape directly — but it can pin down the shape
+-- the fixed migration must land on, so a similar mistake in a future
+-- migration touching this table doesn't go unnoticed.
 BEGIN;
-SELECT plan(6);
+SELECT plan(9);
+
+SELECT hasnt_column('public', 'service_operating_hours', 'service_id', 'service_id no longer exists — station_service_id replaced it');
+SELECT has_column('public', 'service_operating_hours', 'station_service_id', 'station_service_id exists');
+SELECT col_not_null('public', 'service_operating_hours', 'station_service_id', 'station_service_id is NOT NULL — every row belongs to a specific station''s offering');
 
 INSERT INTO public.stations (id, name_en, name_ar, address_en, address_ar, latitude, longitude)
 VALUES
