@@ -151,6 +151,34 @@ Not required for local development, but when you're ready to deploy:
    the same way as above (Settings → API in the Supabase dashboard, under
    "Publishable key").
 
+### First admin on a real project
+
+Seed data (with its fictional demo accounts) intentionally never runs
+against a real project, so a freshly created hosted project has **no**
+`OWNER`/`MANAGER` yet. New sign-ups always start as `CUSTOMER`
+(`handle_new_user()` in `supabase/migrations/20240101000070_auth_handlers.sql`
+guarantees that — nothing at signup can grant a higher role), and
+promoting someone requires an *existing* `OWNER`/`MANAGER` — a
+chicken-and-egg gap on a brand-new project.
+
+To get past it once:
+
+1. Create your account the normal way (sign up, or have Supabase Auth
+   create the user) — it'll land as `CUSTOMER`, and the admin dashboard
+   will correctly refuse it for now.
+2. Run:
+   ```bash
+   pnpm db:bootstrap-owner
+   ```
+   It'll ask for that account's email and password (typed straight into
+   your terminal, never stored or committed) and call the
+   `bootstrap_first_owner()` database function
+   (`supabase/migrations/20240101000160_bootstrap_first_owner.sql`), which
+   promotes that account to `OWNER` — but only while no `OWNER`/`MANAGER`
+   exists yet. It permanently refuses the moment one does, so it's safe to
+   leave in the repo; every promotion after the first goes through the
+   normal owner/manager-only path in the admin dashboard.
+
 ### Running the database tests
 
 ```bash

@@ -18,7 +18,8 @@
     "db:start": "supabase start",
     "db:reset": "supabase db reset",
     "db:test": "supabase test db",
-    "db:types": "supabase gen types typescript --local > packages/types/src/database.ts"
+    "db:types": "supabase gen types typescript --local > packages/types/src/database.ts",
+    "db:bootstrap-owner": "node scripts/bootstrap-first-owner.mjs"
   },
   "devDependencies": {
     "prettier": "^3.3.3",

@@ -121,6 +121,20 @@ updating their own profile), so those columns use Postgres column-level
 
 Verified by `supabase/tests/database/006_complaint_internal_notes.test.sql`.
 
+## Bootstrapping the first OWNER on a real project
+
+`set_profile_role()` requires the caller to already be `OWNER`/`MANAGER` —
+correct for every promotion after the first, but a chicken-and-egg problem
+on a freshly created project with no seed data and therefore no admin at
+all yet. `bootstrap_first_owner()`
+(`supabase/migrations/20240101000160_bootstrap_first_owner.sql`) is the
+one-time escape hatch: it lets the calling user promote *themselves* to
+`OWNER`, but only while `profiles` has zero `OWNER`/`MANAGER` rows —
+checked inside the same `SECURITY DEFINER` function, not by the app — so
+it permanently locks itself out the moment a real admin exists. See
+README.md "First admin on a real project" for how it's invoked and
+`supabase/tests/database/007_bootstrap_first_owner.test.sql` for the tests.
+
 ## Changes from the original plan
 
 Two refinements made while implementing, both documented in the relevant
