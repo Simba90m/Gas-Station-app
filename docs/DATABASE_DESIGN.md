@@ -1,9 +1,10 @@
-# Database Design Plan (Phase 2 preview)
+# Database Design
 
-This is the **plan** for the database — not the database itself. Actual SQL
-migrations, Row Level Security policies, and seed data are built in Phase 2
-against this plan. Documenting it now lets you review the shape of the data
-before any code depends on it.
+**Status: implemented in Phase 2.** This document was originally written as
+a pre-Phase-2 plan; it's now updated to describe what was actually built —
+see `supabase/migrations/` for the exact SQL, and the "Changes from the
+original plan" section below for where implementation diverged slightly
+from the first draft.
 
 ## Core design rules
 
@@ -37,7 +38,7 @@ before any code depends on it.
 | `services` | Configurable services (fuel, car wash tiers, oil change, café items, ...) — name/price/duration in EN+AR |
 | `station_services` | Which services a given station offers (a service can exist without every station offering it) |
 | `service_operating_hours` | Per-service, per-day-of-week open/close times (separate from station hours — see rule 1) |
-| `service_resources` | Bookable resources a service needs, e.g. car wash bays; tracks count and maintenance status |
+| `service_resources` | Bookable resources (e.g. car wash bays), one level more specific than the plan below: attached to a station's *offering* of a service (`station_services`), not the service globally — see "Changes from the original plan" |
 | `offers` | Promotions: EN/AR title, discount, date range, applicable stations/services |
 | `offer_stations` | Join table: which stations an offer applies to |
 | `customers` | Customer-specific data (linked to a `profiles` row) |
@@ -63,40 +64,96 @@ been added or removed.
 ```
 stations ──< station_operating_hours
 stations ──< station_services >── services ──< service_operating_hours
-services ──< service_resources                (e.g. car wash bays)
-employees ──< employee_station_assignments >── stations
+station_services ──< service_resources        (e.g. car wash bays — per station)
+profiles ──< employee_station_assignments >── stations   (EMPLOYEE + STATION_MANAGER)
 employees ──< employee_working_hours
+employees ──< shifts >── stations
 
-customers ──< bookings >── stations, services, employees, service_resources
+customers ──< bookings >── stations, station_services, service_resources, employees
 bookings ──< booking_status_history
 bookings ──< feedback
 bookings ──< complaints ──< complaint_status_history
 
-stations ──< queues >── services
+stations ──< queues >── station_services
 queues ──< queue_entries >── customers
 
 customers ──< loyalty_accounts ──< loyalty_transactions
 profiles ──< device_tokens
+profiles ──< notification_recipients >── notifications
 * ──< audit_logs   (references whatever entity was changed)
 ```
 
 ## Preventing double-booking at the database level
 
-The project brief requires this to be correct even if two customers try to
-book the same employee/bay at the same moment — not just checked in the
-app before submitting. The Phase 2 plan for this: an exclusion constraint
-on `bookings` (Postgres `EXCLUDE USING gist`) over
-`(employee_id, resource_id, time_range)` so overlapping ranges for the same
-employee or resource are rejected by Postgres itself, plus a transaction
-around the booking-creation flow. This gets implemented and tested in Phase
-6 alongside the booking engine; it's noted here because it constrains how
-`bookings` must be shaped (a `tstzrange` time column, not just separate
-start/end columns) from the start.
+Implemented as two `EXCLUDE USING gist` constraints on `bookings` (needs the
+`btree_gist` extension): one over `(employee_id, time_range)`, one over
+`(resource_id, time_range)`, both scoped to bookings that aren't
+`CANCELLED`/`NO_SHOW`. Postgres itself rejects an overlapping INSERT/UPDATE
+for the same employee or resource — this holds even under concurrent
+requests, not just against a check the app does before submitting. Verified
+by `supabase/tests/database/001_booking_exclusion.test.sql`, including that
+a cancelled booking correctly stops blocking its old time slot.
+
+This is why `bookings.time_range` is a real `tstzrange` (a bounded,
+timezone-aware timestamp range) rather than separate `start_at`/`end_at`
+columns — a `tstzrange` is what the `&&` (overlaps) operator and the
+exclusion constraint work on, and it naturally represents a
+midnight-crossing booking (e.g. 23:45–00:15) as an ordinary range with no
+special-casing.
+
+## Column-level privilege protection (not just RLS)
+
+Row Level Security decides which *rows* a role can see — it can't hide one
+*column* on a row a user is otherwise allowed to see. Two places in the
+brief need exactly that ("customers must not see internal complaint
+notes"; a user shouldn't be able to grant themselves a staff role by
+updating their own profile), so those columns use Postgres column-level
+`GRANT`/`REVOKE` instead:
+
+- `complaints.internal_notes` — not selectable/updatable by `authenticated`
+  at all; only reachable via `get_complaint_internal_notes()` /
+  `set_complaint_internal_notes()`, which check the caller is staff at that
+  complaint's station.
+- `profiles.role` and `profiles.is_active` — not updatable directly (only
+  `full_name`, `phone`, `preferred_locale`, `avatar_url` are); changed only
+  via `set_profile_role()` / `set_profile_active()`, which check the caller
+  is OWNER/MANAGER.
+
+Verified by `supabase/tests/database/006_complaint_internal_notes.test.sql`.
+
+## Changes from the original plan
+
+Two refinements made while implementing, both documented in the relevant
+migration file's comments:
+
+1. **`service_resources` moved one level down.** The original sketch had
+   bays attached directly to `services` (global). The brief's own bay
+   example ("Station 1: Bay 1, Bay 2, Bay 3 ... configurable per station")
+   only makes sense per-station, so `service_resources.station_service_id`
+   references `station_services` (a specific station's offering of a
+   service) instead of `services` directly.
+2. **`offers.service_id`, not an `offer_services` join table.** The brief's
+   table list only specifies `offer_stations`; "applicable services" is a
+   single nullable `offers.service_id` column (`NULL` = every service at
+   the applicable stations) rather than inventing a second join table.
+
+## Known simplification: MANAGER's scope
+
+The brief describes MANAGER as having "management access according to
+assigned scope," but the given table list has no scope table for MANAGER
+(only `employee_station_assignments`, which is for EMPLOYEE/
+STATION_MANAGER). Until a scoping mechanism is specified, `is_owner_or_manager()`
+(the RLS helper function) treats MANAGER identically to OWNER — all-station
+access. Revisit if the business needs MANAGER scoped to a subset of
+stations.
 
 ## What's intentionally not decided yet
 
-- Exact columns/data types per table — written as SQL in Phase 2
-- RLS policy text per table — written alongside each migration in Phase 2
 - Loyalty point rules (points per booking, tiers, rewards) — the brief says
   not to over-engineer this initially; `loyalty_transactions` gives room to
   add rules later without a schema change
+- Cancellation-deadline configurability ("cancel up to X minutes before the
+  appointment") — booking-engine logic, Phase 6
+- Automated notification sending (booking reminders, etc.) — Phase 9;
+  for now `notifications`/`notification_recipients` can only be written by
+  OWNER/MANAGER manually

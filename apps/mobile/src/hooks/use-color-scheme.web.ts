@@ -8,6 +8,10 @@ export function useColorScheme() {
   const [hasHydrated, setHasHydrated] = useState(false);
 
   useEffect(() => {
+    // Deliberate one-time hydration-guard flag (not an accidental cascading
+    // render) — the recommended alternative is useSyncExternalStore, which
+    // is more invasive than warranted for this scaffolded hook.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setHasHydrated(true);
   }, []);
 

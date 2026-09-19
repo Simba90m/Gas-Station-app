@@ -93,11 +93,14 @@ they shouldn't see.
 
 The business wants to open until 3–4 AM. A booking at 2:30 AM on "Tuesday
 night" is still part of Tuesday's business day, not Wednesday's — a manager
-reviewing "Tuesday's bookings" the next morning expects to see it. The
-database (Phase 2) will store real timestamps (so nothing is ambiguous) and
-a separate `operating_date` concept for reporting, so a 10 PM–4 AM car wash
-schedule and its bookings are attributed to one consistent business day
-instead of splitting at midnight.
+reviewing "Tuesday's bookings" the next morning expects to see it.
+
+`bookings.time_range` stores a real, timezone-aware timestamp range (see
+`docs/DATABASE_DESIGN.md`), so there's never any ambiguity about *when*
+something happened. Attributing a booking to the right *business day* for
+reporting (so "Tuesday's bookings" correctly includes that 2:30 AM one) is
+a Phase 11 (Analytics & Reporting) concern — it can be computed from the
+stored timestamp when needed, rather than requiring its own column now.
 
 ## Deviations from the originally suggested folder structure
 
@@ -117,8 +120,8 @@ run and test, per the project's development process. High-level sequence
 (see the original project brief for full detail per phase):
 
 0. Planning & architecture *(this doc)*
-1. **Repo setup, monorepo, tooling** ← you are here
-2. Supabase database, migrations, seed data, auth, RLS
+1. Repo setup, monorepo, tooling
+2. **Supabase database, migrations, seed data, auth, RLS** ← you are here
 3. Admin dashboard foundation + station management
 4. Customer mobile app foundation (browse stations/services)
 5. Employee mobile experience
