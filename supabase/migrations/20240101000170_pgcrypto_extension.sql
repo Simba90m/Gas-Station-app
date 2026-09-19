@@ -1,0 +1,26 @@
+-- ============================================================================
+-- pgcrypto: provides crypt()/gen_salt(), which supabase/seed/02_staff.sql
+-- and 05_customers.sql use to hash the fictional 'password123' password for
+-- every seeded demo account.
+--
+-- Root cause of "function gen_salt(unknown) does not exist" on a hosted
+-- project: Supabase provisions pgcrypto by default, but only inside the
+-- `extensions` schema — and unlike the roles PostgREST connects as
+-- (authenticated/anon/service_role), the plain Postgres role `supabase db
+-- push` uses to run migrations/seed does NOT have `extensions` on its
+-- search_path. The extension exists; it just isn't reachable unqualified
+-- from that connection, so a bare gen_salt('bf') resolves to nothing.
+-- Locally, the CLI's dev stack didn't hit this because that role's
+-- search_path already includes `extensions`.
+--
+-- Declared explicitly here — rather than assumed — for the same reason
+-- 20240101000005_default_privileges.sql gives for privileges: so this
+-- migration set is self-contained and correct on a project that hasn't
+-- already provisioned it too, not just one that has (CREATE SCHEMA/EXTENSION
+-- IF NOT EXISTS is a no-op wherever Supabase already set this up). The seed
+-- files reference these functions schema-qualified
+-- (extensions.crypt(...), extensions.gen_salt(...)) so they never depend on
+-- search_path at all, in any environment.
+-- ============================================================================
+CREATE SCHEMA IF NOT EXISTS extensions;
+CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;

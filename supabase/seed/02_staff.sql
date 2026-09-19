@@ -10,6 +10,13 @@
 -- Every INSERT below is guarded (ON CONFLICT / WHERE NOT EXISTS, on each
 -- table's real primary key or unique constraint) so this file is safe to
 -- run more than once — see the note at the top of 01_stations.sql.
+--
+-- crypt()/gen_salt() are schema-qualified (extensions.crypt(...)) rather
+-- than bare — see supabase/migrations/20240101000170_pgcrypto_extension.sql
+-- for why: on a hosted project, pgcrypto lives in the `extensions` schema,
+-- which isn't on the search_path for the connection `supabase db push`
+-- uses, so a bare gen_salt('bf') fails with "function ... does not exist"
+-- even though the extension is installed.
 -- ============================================================================
 
 INSERT INTO auth.users (
@@ -17,18 +24,18 @@ INSERT INTO auth.users (
   raw_app_meta_data, raw_user_meta_data
 )
 VALUES
-  ('00000000-0000-0000-0000-000000000000', '20000000-0000-0000-0000-000000000001', 'authenticated', 'authenticated', 'owner@demo.gasstation.test', crypt('password123', gen_salt('bf')), now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Ahmed Fathy","phone":"+201001111111"}'),
-  ('00000000-0000-0000-0000-000000000000', '20000000-0000-0000-0000-000000000002', 'authenticated', 'authenticated', 'manager@demo.gasstation.test', crypt('password123', gen_salt('bf')), now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Mona Sherif","phone":"+201001111112"}'),
-  ('00000000-0000-0000-0000-000000000000', '20000000-0000-0000-0000-000000000011', 'authenticated', 'authenticated', 'manager.station1@demo.gasstation.test', crypt('password123', gen_salt('bf')), now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Hassan Ibrahim","phone":"+201001111121"}'),
-  ('00000000-0000-0000-0000-000000000000', '20000000-0000-0000-0000-000000000012', 'authenticated', 'authenticated', 'manager.station2@demo.gasstation.test', crypt('password123', gen_salt('bf')), now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Laila Adel","phone":"+201001111122"}'),
-  ('00000000-0000-0000-0000-000000000000', '20000000-0000-0000-0000-000000000013', 'authenticated', 'authenticated', 'manager.station3@demo.gasstation.test', crypt('password123', gen_salt('bf')), now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Tarek Younis","phone":"+201001111123"}'),
+  ('00000000-0000-0000-0000-000000000000', '20000000-0000-0000-0000-000000000001', 'authenticated', 'authenticated', 'owner@demo.gasstation.test', extensions.crypt('password123', extensions.gen_salt('bf')), now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Ahmed Fathy","phone":"+201001111111"}'),
+  ('00000000-0000-0000-0000-000000000000', '20000000-0000-0000-0000-000000000002', 'authenticated', 'authenticated', 'manager@demo.gasstation.test', extensions.crypt('password123', extensions.gen_salt('bf')), now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Mona Sherif","phone":"+201001111112"}'),
+  ('00000000-0000-0000-0000-000000000000', '20000000-0000-0000-0000-000000000011', 'authenticated', 'authenticated', 'manager.station1@demo.gasstation.test', extensions.crypt('password123', extensions.gen_salt('bf')), now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Hassan Ibrahim","phone":"+201001111121"}'),
+  ('00000000-0000-0000-0000-000000000000', '20000000-0000-0000-0000-000000000012', 'authenticated', 'authenticated', 'manager.station2@demo.gasstation.test', extensions.crypt('password123', extensions.gen_salt('bf')), now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Laila Adel","phone":"+201001111122"}'),
+  ('00000000-0000-0000-0000-000000000000', '20000000-0000-0000-0000-000000000013', 'authenticated', 'authenticated', 'manager.station3@demo.gasstation.test', extensions.crypt('password123', extensions.gen_salt('bf')), now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Tarek Younis","phone":"+201001111123"}'),
   -- Station 1 employees: one day-shift, one night-shift (crosses midnight)
-  ('00000000-0000-0000-0000-000000000000', '20000000-0000-0000-0000-000000000021', 'authenticated', 'authenticated', 'ahmed.wash@demo.gasstation.test', crypt('password123', gen_salt('bf')), now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Ahmed Samir","phone":"+201001111211"}'),
-  ('00000000-0000-0000-0000-000000000000', '20000000-0000-0000-0000-000000000022', 'authenticated', 'authenticated', 'karim.wash@demo.gasstation.test', crypt('password123', gen_salt('bf')), now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Karim Nabil","phone":"+201001111212"}'),
+  ('00000000-0000-0000-0000-000000000000', '20000000-0000-0000-0000-000000000021', 'authenticated', 'authenticated', 'ahmed.wash@demo.gasstation.test', extensions.crypt('password123', extensions.gen_salt('bf')), now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Ahmed Samir","phone":"+201001111211"}'),
+  ('00000000-0000-0000-0000-000000000000', '20000000-0000-0000-0000-000000000022', 'authenticated', 'authenticated', 'karim.wash@demo.gasstation.test', extensions.crypt('password123', extensions.gen_salt('bf')), now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Karim Nabil","phone":"+201001111212"}'),
   -- Station 2 employees
-  ('00000000-0000-0000-0000-000000000000', '20000000-0000-0000-0000-000000000031', 'authenticated', 'authenticated', 'sara.wash@demo.gasstation.test', crypt('password123', gen_salt('bf')), now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Sara Mostafa","phone":"+201001111311"}'),
+  ('00000000-0000-0000-0000-000000000000', '20000000-0000-0000-0000-000000000031', 'authenticated', 'authenticated', 'sara.wash@demo.gasstation.test', extensions.crypt('password123', extensions.gen_salt('bf')), now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Sara Mostafa","phone":"+201001111311"}'),
   -- Station 3 employees
-  ('00000000-0000-0000-0000-000000000000', '20000000-0000-0000-0000-000000000041', 'authenticated', 'authenticated', 'omar.wash@demo.gasstation.test', crypt('password123', gen_salt('bf')), now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Omar Khaled","phone":"+201001111411"}')
+  ('00000000-0000-0000-0000-000000000000', '20000000-0000-0000-0000-000000000041', 'authenticated', 'authenticated', 'omar.wash@demo.gasstation.test', extensions.crypt('password123', extensions.gen_salt('bf')), now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Omar Khaled","phone":"+201001111411"}')
 ON CONFLICT (id) DO NOTHING;
 
 -- The trigger on auth.users (handle_new_user) already created a CUSTOMER
