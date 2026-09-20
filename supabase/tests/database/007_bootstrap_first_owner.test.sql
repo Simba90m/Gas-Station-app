@@ -8,6 +8,17 @@ SELECT plan(5);
 -- Privileged fixture setup (see 003_rls_customer_isolation.test.sql for why).
 SET LOCAL ROLE postgres;
 
+-- bootstrap_first_owner() checks globally for an existing OWNER/MANAGER
+-- (by design — see 20240101000160_bootstrap_first_owner.sql), not just
+-- among this test's own fixture rows. Against the linked hosted project
+-- that's already had its real OWNER bootstrapped, that check would see the
+-- real row and correctly refuse — which isn't what this test is about, and
+-- must NOT be "fixed" by weakening the function. Test isolation instead:
+-- temporarily demote any existing OWNER/MANAGER within this transaction
+-- only, so the "no admin exists yet" precondition genuinely holds for the
+-- scenario being tested. ROLLBACK below restores the real row untouched.
+UPDATE public.profiles SET role = 'CUSTOMER' WHERE role IN ('OWNER', 'MANAGER');
+
 INSERT INTO auth.users (id, email) VALUES ('a0000000-0000-0000-0000-000000000701', 'bootstrap-first@example.com');
 INSERT INTO auth.users (id, email) VALUES ('a0000000-0000-0000-0000-000000000702', 'bootstrap-second@example.com');
 

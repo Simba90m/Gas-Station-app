@@ -53,6 +53,18 @@ UPDATE public.profiles SET role = 'EMPLOYEE' WHERE id = 'a0000000-0000-0000-0000
 SET LOCAL ROLE authenticated;
 SET LOCAL request.jwt.claim.sub = 'a0000000-0000-0000-0000-000000001230';
 UPDATE public.profiles SET full_name = 'Hijacked' WHERE id = 'a0000000-0000-0000-0000-000000001210';
+
+-- Verify the REAL persisted value, not what the unrelated employee can see.
+-- profiles_select_own/_owner_manager/_related_via_booking correctly give
+-- 001230 no visibility into 001210's row at all (not self, not
+-- OWNER/MANAGER, no shared booking) — reading it back as still-001230
+-- would return NULL from zero visible rows, which looks like a value
+-- change but is actually RLS hiding the row entirely from that identity.
+-- The blocked UPDATE above already proves the write was rejected; this
+-- checks the value truly wasn't touched, so it has to read as a role that
+-- can actually see the row.
+RESET ROLE;
+SET LOCAL ROLE postgres;
 SELECT is(
   (SELECT full_name FROM public.profiles WHERE id = 'a0000000-0000-0000-0000-000000001210'),
   'New Name',
