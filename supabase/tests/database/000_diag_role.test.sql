@@ -8,7 +8,7 @@
 -- pgTAP's diag() (which prints to the test output regardless of pass/fail),
 -- so the answer comes from the real linked database, not a guess.
 BEGIN;
-SELECT plan(1);
+SELECT plan(3);
 
 -- NOTE: a first version of this file also checked
 -- has_table_privilege(current_user, 'auth.users', 'INSERT') — that itself
@@ -33,6 +33,34 @@ SELECT diag(format(
 ));
 
 SELECT ok(true, 'diagnostic values printed above via diag()');
+
+-- Confirm the actual candidate fix mechanism works, rather than assuming
+-- pg_auth_members membership implies SET ROLE will succeed.
+SET LOCAL ROLE postgres;
+
+SELECT diag(format(
+  E'--- after SET LOCAL ROLE postgres ---\ncurrent_user=%s\ncan_select_stations=%s\ncan_insert_stations=%s\nhas_usage_auth=%s',
+  current_user,
+  has_table_privilege(current_user, 'public.stations', 'SELECT')::text,
+  has_table_privilege(current_user, 'public.stations', 'INSERT')::text,
+  has_schema_privilege(current_user, 'auth', 'USAGE')::text
+));
+
+-- Metadata checks can say "yes" while something else (a trigger, a
+-- downstream constraint) still fails — so actually do the two operations
+-- every one of the 12 test files' fixtures need, for real, inside this
+-- rolled-back transaction.
+SELECT lives_ok(
+  $$ INSERT INTO public.stations (id, name_en, name_ar, address_en, address_ar, latitude, longitude)
+     VALUES ('a0000000-0000-0000-0000-00000000dd01', 'Diag Station', 'محطة تشخيص', 'Addr', 'عنوان', 31.2, 29.9) $$,
+  'SET LOCAL ROLE postgres can insert into public.stations'
+);
+SELECT lives_ok(
+  $$ INSERT INTO auth.users (id, email) VALUES ('a0000000-0000-0000-0000-00000000dd02', 'diag-fixture@example.com') $$,
+  'SET LOCAL ROLE postgres can insert into auth.users (and the handle_new_user trigger fires without error)'
+);
+
+RESET ROLE;
 
 SELECT * FROM finish();
 ROLLBACK;
