@@ -61,6 +61,12 @@ INSERT INTO public.employee_service_capabilities (employee_id, service_id)
 VALUES ('a0000000-0000-0000-0000-000000001551', 'a0000000-0000-0000-0000-000000001520');
 INSERT INTO public.employee_working_hours (employee_id, day_of_week, starts_at, ends_at, break_starts_at, break_ends_at)
 VALUES ('a0000000-0000-0000-0000-000000001551', 1, '08:00', '16:00', '12:00', '12:30');
+-- Also works Friday (crossing midnight), so the midnight-crossing
+-- assertion below actually exercises the hours/range computation instead
+-- of being starved by "nobody is scheduled that day" — this service
+-- requires an employee, and no employee had ANY Friday row before this.
+INSERT INTO public.employee_working_hours (employee_id, day_of_week, starts_at, ends_at)
+VALUES ('a0000000-0000-0000-0000-000000001551', 5, '17:00', '03:00');
 
 -- Employee B: capable, assigned to Station A, works Monday 14:00-20:00, no break.
 INSERT INTO auth.users (id, email) VALUES ('a0000000-0000-0000-0000-000000001552', 'slots-emp-b@example.com');
