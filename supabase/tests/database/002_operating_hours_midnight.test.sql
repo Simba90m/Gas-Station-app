@@ -23,6 +23,13 @@ SELECT ok(
   'is_closed=true with opens_at/closes_at set is invalid'
 );
 
+-- Privileged fixture setup: npx supabase test db --linked connects as
+-- cli_login_postgres, which has no direct grant on public.stations
+-- (unlike local Docker, where the connecting role is a real superuser).
+-- It IS a member of postgres, so SET LOCAL ROLE assumes that membership for
+-- this insert only, scoped to this transaction — no GRANT involved.
+SET LOCAL ROLE postgres;
+
 -- A real midnight-crossing row can actually be inserted and stored.
 INSERT INTO public.stations (id, name_en, name_ar, address_en, address_ar, latitude, longitude)
 VALUES ('a0000000-0000-0000-0000-000000000110', 'Test Station', 'محطة اختبار', 'Addr', 'عنوان', 31.2, 29.9);
@@ -36,5 +43,6 @@ SELECT is(
   'a midnight-crossing station_operating_hours row is stored with opens_at > closes_at, unmodified'
 );
 
+RESET ROLE;
 SELECT * FROM finish();
 ROLLBACK;

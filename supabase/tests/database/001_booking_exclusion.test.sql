@@ -4,6 +4,14 @@
 BEGIN;
 SELECT plan(4);
 
+-- Privileged fixture setup (auth.users + arbitrary public-table inserts):
+-- npx supabase test db --linked connects as cli_login_postgres, which has
+-- no direct grants on these tables (unlike local Docker, where the
+-- connecting role is a real superuser). It IS a member of postgres, so
+-- SET LOCAL ROLE assumes that membership for fixture setup only, scoped to
+-- this transaction — reverts automatically on ROLLBACK, no GRANT involved.
+SET LOCAL ROLE postgres;
+
 -- Fixtures
 INSERT INTO auth.users (id, email) VALUES ('a0000000-0000-0000-0000-000000000001', 'test-owner@example.com');
 UPDATE public.profiles SET role = 'OWNER' WHERE id = 'a0000000-0000-0000-0000-000000000001';
@@ -85,5 +93,6 @@ SELECT lives_ok(
   'a cancelled booking does not block a new booking for the same slot'
 );
 
+RESET ROLE;
 SELECT * FROM finish();
 ROLLBACK;

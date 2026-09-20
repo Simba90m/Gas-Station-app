@@ -5,6 +5,13 @@
 BEGIN;
 SELECT plan(5);
 
+-- Privileged fixture setup (see 003_rls_customer_isolation.test.sql for
+-- why). Re-elevated again further down, right before each additional
+-- fixture block this file needs mid-test — never left at `authenticated`
+-- while inserting auth.users/profiles rows, which would otherwise require
+-- granting that role write access it must never have in production.
+SET LOCAL ROLE postgres;
+
 INSERT INTO public.stations (id, name_en, name_ar, address_en, address_ar, latitude, longitude)
 VALUES
   ('a0000000-0000-0000-0000-000000001110', 'Cap Station A', 'محطة أ', 'Addr A', 'عنوان أ', 31.2, 29.9),
@@ -44,11 +51,18 @@ SELECT throws_ok(
 
 -- Station A's manager (the employee's own assigned station): can see and
 -- can write the capability.
+--
+-- Re-elevate for this fixture block — still `authenticated` from the OWNER
+-- write above, which has no auth.users/profiles write access (correctly).
+RESET ROLE;
+SET LOCAL ROLE postgres;
+
 INSERT INTO auth.users (id, email) VALUES ('a0000000-0000-0000-0000-000000001160', 'cap-station-a-mgr@example.com');
 UPDATE public.profiles SET role = 'STATION_MANAGER' WHERE id = 'a0000000-0000-0000-0000-000000001160';
 INSERT INTO public.employee_station_assignments (profile_id, station_id)
 VALUES ('a0000000-0000-0000-0000-000000001160', 'a0000000-0000-0000-0000-000000001110');
 
+SET LOCAL ROLE authenticated;
 SET LOCAL request.jwt.claim.sub = 'a0000000-0000-0000-0000-000000001160';
 SELECT is(
   (SELECT count(*) FROM public.employee_service_capabilities WHERE employee_id = 'a0000000-0000-0000-0000-000000001140')::int,
@@ -58,11 +72,18 @@ SELECT is(
 
 -- Station B's manager (NOT the employee's station): cannot see it, and
 -- cannot write it.
+--
+-- Re-elevate for this fixture block — still `authenticated` from station
+-- A's manager above, which has no auth.users/profiles write access.
+RESET ROLE;
+SET LOCAL ROLE postgres;
+
 INSERT INTO auth.users (id, email) VALUES ('a0000000-0000-0000-0000-000000001170', 'cap-station-b-mgr@example.com');
 UPDATE public.profiles SET role = 'STATION_MANAGER' WHERE id = 'a0000000-0000-0000-0000-000000001170';
 INSERT INTO public.employee_station_assignments (profile_id, station_id)
 VALUES ('a0000000-0000-0000-0000-000000001170', 'a0000000-0000-0000-0000-000000001120');
 
+SET LOCAL ROLE authenticated;
 SET LOCAL request.jwt.claim.sub = 'a0000000-0000-0000-0000-000000001170';
 SELECT is(
   (SELECT count(*) FROM public.employee_service_capabilities WHERE employee_id = 'a0000000-0000-0000-0000-000000001140')::int,

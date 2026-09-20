@@ -5,9 +5,15 @@
 -- side effect (loyalty_transactions crediting points) — must never apply
 -- that side effect twice either. This runs as the same role the seed
 -- files themselves run as (no SET LOCAL ROLE authenticated), matching how
--- `supabase db push --include-seed` / `supabase db reset` actually apply them.
+-- `supabase db push --include-seed` / `supabase db reset` actually apply
+-- them — both of those connect as `postgres` directly (confirmed: it owns
+-- every table), unlike `npx supabase test db --linked` itself, which
+-- connects as the unprivileged `cli_login_postgres`. SET LOCAL ROLE here
+-- isn't a workaround for that gap — it's what makes this test actually
+-- simulate the role seeding runs as.
 BEGIN;
 SELECT plan(4);
+SET LOCAL ROLE postgres;
 
 -- ------------------------------------------------------------------------
 -- Pattern 1: ON CONFLICT (id) DO NOTHING, keyed on an explicit hardcoded
@@ -99,5 +105,6 @@ SELECT is(
   'points_balance reflects the award exactly once, not twice, on a second run'
 );
 
+RESET ROLE;
 SELECT * FROM finish();
 ROLLBACK;

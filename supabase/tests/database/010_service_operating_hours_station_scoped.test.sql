@@ -19,6 +19,13 @@
 BEGIN;
 SELECT plan(9);
 
+-- Privileged fixture setup (see 003_rls_customer_isolation.test.sql for
+-- why). Re-elevated again further down, right before each additional
+-- fixture block this file needs mid-test — never left at `authenticated`
+-- while inserting auth.users/profiles rows, which would otherwise require
+-- granting that role write access it must never have in production.
+SET LOCAL ROLE postgres;
+
 SELECT hasnt_column('public', 'service_operating_hours', 'service_id', 'service_id no longer exists — station_service_id replaced it');
 SELECT has_column('public', 'service_operating_hours', 'station_service_id', 'station_service_id exists');
 SELECT col_not_null('public', 'service_operating_hours', 'station_service_id', 'station_service_id is NOT NULL — every row belongs to a specific station''s offering');
@@ -72,11 +79,18 @@ SELECT is(
 -- also sees B's (both station_service and station are active — same
 -- "active offerings are publicly visible" rule service_resources already
 -- follows), but loses visibility once B's offering is deactivated.
+--
+-- Re-elevate for this fixture block — still `authenticated` from the OWNER
+-- write above, which has no auth.users/profiles write access (correctly).
+RESET ROLE;
+SET LOCAL ROLE postgres;
+
 INSERT INTO auth.users (id, email) VALUES ('a0000000-0000-0000-0000-000000001070', 'hours-station-a-mgr@example.com');
 UPDATE public.profiles SET role = 'STATION_MANAGER' WHERE id = 'a0000000-0000-0000-0000-000000001070';
 INSERT INTO public.employee_station_assignments (profile_id, station_id)
 VALUES ('a0000000-0000-0000-0000-000000001070', 'a0000000-0000-0000-0000-000000001010');
 
+SET LOCAL ROLE authenticated;
 SET LOCAL request.jwt.claim.sub = 'a0000000-0000-0000-0000-000000001070';
 SELECT is(
   (SELECT count(*) FROM public.service_operating_hours WHERE station_service_id = 'a0000000-0000-0000-0000-000000001040')::int,

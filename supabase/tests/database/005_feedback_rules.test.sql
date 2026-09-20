@@ -4,6 +4,13 @@
 BEGIN;
 SELECT plan(3);
 
+-- Privileged fixture setup (see 003_rls_customer_isolation.test.sql for
+-- why). This test exercises a CHECK constraint/trigger rule, not RLS, so
+-- it stays elevated for the whole file rather than switching to
+-- `authenticated` — same as the local Docker superuser behavior it's
+-- restoring parity with.
+SET LOCAL ROLE postgres;
+
 INSERT INTO auth.users (id, email) VALUES ('a0000000-0000-0000-0000-000000000401', 'fb-customer@example.com');
 INSERT INTO public.stations (id, name_en, name_ar, address_en, address_ar, latitude, longitude)
 VALUES ('a0000000-0000-0000-0000-000000000410', 'Test Station', 'محطة اختبار', 'Addr', 'عنوان', 31.2, 29.9);
@@ -41,5 +48,6 @@ SELECT throws_ok(
   'a second feedback row for the same booking is rejected (no duplicate reviews)'
 );
 
+RESET ROLE;
 SELECT * FROM finish();
 ROLLBACK;

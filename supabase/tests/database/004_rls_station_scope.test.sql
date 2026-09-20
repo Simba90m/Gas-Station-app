@@ -4,6 +4,9 @@
 BEGIN;
 SELECT plan(3);
 
+-- Privileged fixture setup (see 003_rls_customer_isolation.test.sql for why).
+SET LOCAL ROLE postgres;
+
 INSERT INTO auth.users (id, email) VALUES ('a0000000-0000-0000-0000-000000000301', 'station1-mgr@example.com');
 UPDATE public.profiles SET role = 'STATION_MANAGER' WHERE id = 'a0000000-0000-0000-0000-000000000301';
 

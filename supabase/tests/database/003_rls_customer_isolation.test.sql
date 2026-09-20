@@ -6,6 +6,15 @@
 BEGIN;
 SELECT plan(4);
 
+-- Privileged fixture setup: npx supabase test db --linked connects as
+-- cli_login_postgres, which has no direct grant on auth.users/public
+-- tables (unlike local Docker, where the connecting role is a real
+-- superuser). It IS a member of postgres, so SET LOCAL ROLE assumes that
+-- membership for fixture setup only, scoped to this transaction — reverts
+-- automatically on ROLLBACK, no GRANT involved. Switched to `authenticated`
+-- below once fixtures are in place, for the actual RLS assertions.
+SET LOCAL ROLE postgres;
+
 INSERT INTO auth.users (id, email) VALUES ('a0000000-0000-0000-0000-000000000201', 'iso-customer-a@example.com');
 INSERT INTO auth.users (id, email) VALUES ('a0000000-0000-0000-0000-000000000202', 'iso-customer-b@example.com');
 

@@ -5,6 +5,9 @@
 BEGIN;
 SELECT plan(5);
 
+-- Privileged fixture setup (see 003_rls_customer_isolation.test.sql for why).
+SET LOCAL ROLE postgres;
+
 INSERT INTO auth.users (id, email) VALUES ('a0000000-0000-0000-0000-000000000701', 'bootstrap-first@example.com');
 INSERT INTO auth.users (id, email) VALUES ('a0000000-0000-0000-0000-000000000702', 'bootstrap-second@example.com');
 

@@ -6,6 +6,13 @@
 BEGIN;
 SELECT plan(4);
 
+-- Privileged fixture setup (see 003_rls_customer_isolation.test.sql for
+-- why). Re-elevated again further down before the last fixture block —
+-- never left at `authenticated` while inserting auth.users/profiles rows,
+-- which would otherwise require granting that role write access it must
+-- never have in production.
+SET LOCAL ROLE postgres;
+
 INSERT INTO auth.users (id, email) VALUES ('a0000000-0000-0000-0000-000000001210', 'contact-employee@example.com');
 UPDATE public.profiles SET role = 'EMPLOYEE', full_name = 'Old Name' WHERE id = 'a0000000-0000-0000-0000-000000001210';
 
@@ -34,9 +41,16 @@ SELECT is(
 );
 
 -- An unrelated employee (neither self nor OWNER/MANAGER) still can't touch it.
+--
+-- Re-elevate for this fixture block — still `authenticated` from the OWNER
+-- above, which has no auth.users/profiles write access (correctly).
+RESET ROLE;
+SET LOCAL ROLE postgres;
+
 INSERT INTO auth.users (id, email) VALUES ('a0000000-0000-0000-0000-000000001230', 'contact-other@example.com');
 UPDATE public.profiles SET role = 'EMPLOYEE' WHERE id = 'a0000000-0000-0000-0000-000000001230';
 
+SET LOCAL ROLE authenticated;
 SET LOCAL request.jwt.claim.sub = 'a0000000-0000-0000-0000-000000001230';
 UPDATE public.profiles SET full_name = 'Hijacked' WHERE id = 'a0000000-0000-0000-0000-000000001210';
 SELECT is(
