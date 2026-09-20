@@ -39,4 +39,17 @@ export const env = {
   // that rejects (never silently reuses) an existing phone — see
   // apps/admin/src/app/join/[token]/actions.ts.
   qrJoinToken: () => requireEnv("QR_JOIN_TOKEN", process.env.QR_JOIN_TOKEN),
+  // Optional — no requireEnv, since a real reverse proxy setting Host/
+  // X-Forwarded-Proto correctly is a perfectly good fallback in production
+  // (see app/(dashboard)/join-qr/page.tsx, which does that fallback). Exists
+  // for the cases request headers get wrong: local LAN testing (the request
+  // that renders this admin page arrives with Host: localhost:3000 even
+  // though a phone on the network needs http://<lan-ip>:3000) and any
+  // production deployment behind infra that doesn't forward the real host.
+  // Set to a full origin with no trailing slash, e.g.
+  // http://192.168.8.26:3000 for LAN testing or https://admin.example.com
+  // in production. Not a secret — it's the same public URL the QR code
+  // itself encodes — so no NEXT_PUBLIC_ prefix is needed; nothing client-side
+  // reads it directly.
+  joinBaseUrl: () => process.env.JOIN_BASE_URL || undefined,
 };
