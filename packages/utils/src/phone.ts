@@ -1,4 +1,4 @@
-import { parsePhoneNumberFromString, type CountryCode } from "libphonenumber-js/min";
+import { parsePhoneNumberFromString, type CountryCode } from "libphonenumber-js";
 
 export type { CountryCode };
 
@@ -11,6 +11,16 @@ export type { CountryCode };
  * supabase/migrations/20240101000260_global_phone_and_kiosk.sql for the
  * matching database CHECK constraint) — not Egypt-only, even though Egypt
  * is the default country for the UI (initial market).
+ *
+ * Imports the package's default entry ("libphonenumber-js"), not the
+ * "/min" subpath — same metadata (the default entry already re-exports
+ * from libphonenumber-js's own min build internally, so this changes
+ * nothing about bundle size or parsing behavior/accuracy) but resolved
+ * through the package's plain "." export instead of a deep conditional
+ * subpath export, which is what actually failed to resolve for
+ * apps/admin's Turbopack build (see apps/admin/package.json for the other
+ * half of this fix — why the dependency is declared there too, not just
+ * here).
  */
 
 /** Egypt is the initial market — the country selector defaults here, but the user can always change it. */
