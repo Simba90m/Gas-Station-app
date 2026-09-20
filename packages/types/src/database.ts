@@ -498,9 +498,33 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["offers"]["Insert"]>;
         Relationships: [];
       };
-      // converted_booking_id: set when a walk-in queue entry is converted
-      // into a real booking (Phase 7.4 — schema only for now). See
-      // supabase/migrations/20240101000230_booking_engine.sql.
+      // A walk-up queue for one station+service combination. Not created
+      // automatically for every station_services row — staff open one from
+      // the admin "Today's Operations" screen (see
+      // supabase/migrations/20240101000060_queues.sql).
+      queues: {
+        Row: {
+          id: string;
+          station_id: string;
+          station_service_id: string;
+          is_open: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          station_id: string;
+          station_service_id: string;
+          is_open?: boolean;
+        };
+        Update: Partial<Database["public"]["Tables"]["queues"]["Insert"]>;
+        Relationships: [];
+      };
+      // converted_booking_id: set by start_queue_service() when a walk-in
+      // queue entry's service is started — links it to the booking that RPC
+      // creates (Phase 7.3). See
+      // supabase/migrations/20240101000230_booking_engine.sql and
+      // supabase/migrations/20240101000250_queue_booking_bridge.sql.
       queue_entries: {
         Row: {
           id: string;
@@ -619,6 +643,33 @@ export interface Database {
           p_notes?: string | null;
         };
         Returns: Database["public"]["Tables"]["bookings"]["Row"];
+      };
+      // SECURITY DEFINER; same owns_customer_row()/is_station_staff()
+      // authorization shape as create_booking() — a customer joins
+      // themselves, staff can add a walk-in. Assigns the next queue
+      // position atomically. See
+      // supabase/migrations/20240101000250_queue_booking_bridge.sql.
+      join_queue: {
+        Args: { p_customer_id: string; p_station_service_id: string };
+        Returns: Database["public"]["Tables"]["queue_entries"]["Row"];
+      };
+      // SECURITY DEFINER, staff-only. The "start service creates booking"
+      // product decision: calls create_booking() internally (start_at =
+      // now()) and links the result via converted_booking_id — no
+      // availability/conflict logic duplicated here.
+      start_queue_service: {
+        Args: {
+          p_queue_entry_id: string;
+          p_employee_id?: string | null;
+          p_resource_id?: string | null;
+        };
+        Returns: Database["public"]["Tables"]["bookings"]["Row"];
+      };
+      // SECURITY DEFINER, staff-only. Marks the entry COMPLETED and syncs
+      // its linked booking (if any) to COMPLETED too.
+      complete_queue_service: {
+        Args: { p_queue_entry_id: string };
+        Returns: Database["public"]["Tables"]["queue_entries"]["Row"];
       };
     };
   };

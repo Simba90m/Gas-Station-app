@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
 import { parseTimeRange } from "@/lib/postgres-range";
 import { BookingsTable, type BookingRow, type StationOption } from "./bookings-table";
+import { TodaysOperations, type QueueEntryRow, type QueueServiceRow } from "./todays-operations";
 
 export default async function BookingsPage() {
   const supabase = await createClient();
@@ -14,6 +15,8 @@ export default async function BookingsPage() {
     { data: services },
     { data: profiles },
     { data: resources },
+    { data: queues },
+    { data: queueEntries },
   ] = await Promise.all([
     // RLS (bookings_select) already scopes this to what the signed-in
     // staff member can see — their own station(s), or every station for
@@ -26,10 +29,19 @@ export default async function BookingsPage() {
       .order("time_range", { ascending: false })
       .limit(300),
     supabase.from("stations").select("id, name_en"),
-    supabase.from("station_services").select("id, service_id"),
+    supabase.from("station_services").select("id, station_id, service_id").eq("is_active", true),
     supabase.from("services").select("id, name_en"),
     supabase.from("profiles").select("id, full_name"),
     supabase.from("service_resources").select("id, name_en"),
+    // RLS (queues_select) returns every open queue plus, for station staff,
+    // their own station's closed ones too — exactly what's needed to show
+    // both "open queue" and "close queue" affordances.
+    supabase.from("queues").select("id, station_id, station_service_id, is_open"),
+    supabase
+      .from("queue_entries")
+      .select("id, queue_id, customer_id, position, status, joined_at")
+      .in("status", ["WAITING", "CALLED", "IN_SERVICE"])
+      .order("position"),
   ]);
 
   const stationNameById = new Map((stations ?? []).map((s) => [s.id, s.name_en]));
@@ -61,6 +73,39 @@ export default async function BookingsPage() {
 
   const stationOptions: StationOption[] = (stations ?? []).map((s) => ({ id: s.id, nameEn: s.name_en }));
 
+  const queueByStationService = new Map((queues ?? []).map((q) => [q.station_service_id, q]));
+  const queueServiceRows: QueueServiceRow[] = (stationServices ?? []).flatMap((ss) => {
+    const serviceName = serviceNameById.get(ss.service_id);
+    if (!serviceName) return [];
+    const queue = queueByStationService.get(ss.id);
+    return [
+      {
+        stationServiceId: ss.id,
+        stationId: ss.station_id,
+        stationName: stationNameById.get(ss.station_id) ?? "Unknown station",
+        serviceName,
+        queueId: queue?.id ?? null,
+        queueIsOpen: queue?.is_open ?? false,
+      },
+    ];
+  });
+
+  const stationServiceIdByQueueId = new Map((queues ?? []).map((q) => [q.id, q.station_service_id]));
+  const queueEntryRows: QueueEntryRow[] = (queueEntries ?? []).flatMap((e) => {
+    const stationServiceId = stationServiceIdByQueueId.get(e.queue_id);
+    if (!stationServiceId) return [];
+    return [
+      {
+        id: e.id,
+        stationServiceId,
+        customerName: profileNameById.get(e.customer_id) ?? "Unknown customer",
+        position: e.position,
+        status: e.status as QueueEntryRow["status"],
+        joinedAt: e.joined_at,
+      },
+    ];
+  });
+
   return (
     <div>
       <div className="flex items-center justify-between">
@@ -78,6 +123,10 @@ export default async function BookingsPage() {
           Couldn&apos;t load bookings: {bookingsError.message}
         </p>
       )}
+
+      <div className="mt-6">
+        <TodaysOperations services={queueServiceRows} entries={queueEntryRows} />
+      </div>
 
       <BookingsTable bookings={bookingRows} stations={stationOptions} />
     </div>

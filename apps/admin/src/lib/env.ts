@@ -28,4 +28,15 @@ export const env = {
   // solely by lib/supabase/admin.ts, which is itself only ever imported
   // from "use server" files — see that file for why this is safe.
   supabaseServiceRoleKey: () => requireEnv("SUPABASE_SERVICE_ROLE_KEY", process.env.SUPABASE_SERVICE_ROLE_KEY),
+  // Deliberately NOT prefixed with NEXT_PUBLIC_, even though it ends up
+  // inside a URL a customer's phone visits after scanning the company-wide
+  // QR code. It's not a page secret and isn't meant to stay hidden from
+  // that visitor — it's a coarse "you're at one of our stations with our
+  // real QR code" gate, checked against the /join/[token] route param
+  // server-side, and rotatable here without a code change if a link is ever
+  // leaked/abused for spam account creation. The actual security boundary
+  // for the public self-service flow is per-phone-number account creation
+  // that rejects (never silently reuses) an existing phone — see
+  // apps/admin/src/app/join/[token]/actions.ts.
+  qrJoinToken: () => requireEnv("QR_JOIN_TOKEN", process.env.QR_JOIN_TOKEN),
 };
