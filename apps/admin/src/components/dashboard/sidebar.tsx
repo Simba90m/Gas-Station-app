@@ -7,6 +7,7 @@ import { cn } from "@/lib/cn";
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard" },
   { href: "/stations", label: "Stations" },
+  { href: "/employees", label: "Employees" },
 ] as const;
 
 export function Sidebar() {

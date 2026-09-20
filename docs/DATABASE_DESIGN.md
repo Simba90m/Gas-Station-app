@@ -159,6 +159,22 @@ migration file's comments:
    references `station_services` instead — see
    `supabase/migrations/20240101000190_station_scoped_service_hours.sql`
    for the fix and its backfill.
+4. **`employee_service_capabilities` added (Phase 6).** No table anywhere
+   recorded which catalog services an employee can actually perform — a
+   real gap, not a design choice to revisit, since it's what a future
+   booking engine needs to answer "can employee X perform service Y at
+   station Z at time T?" Keyed to the global `services.id` (a skill belongs
+   to the person, not to which station they're standing in), independent
+   of `employee_station_assignments` (where they work) — see
+   `supabase/migrations/20240101000200_employee_service_capabilities.sql`.
+5. **`profiles` gained an OWNER/MANAGER update policy (Phase 6).** Only
+   `profiles_update_own` existed, so nobody but a profile's own owner could
+   ever edit its `full_name`/`phone` — not even an OWNER managing an
+   employee's contact info. `profiles_update_owner_manager` adds that,
+   bounded by the same column-level `GRANT` that already keeps
+   `role`/`is_active` reachable only through
+   `set_profile_role()`/`set_profile_active()` — see
+   `supabase/migrations/20240101000210_profiles_update_owner_manager.sql`.
 
 ## Known simplification: MANAGER's scope
 

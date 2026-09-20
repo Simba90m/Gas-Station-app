@@ -283,6 +283,75 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["employees"]["Insert"]>;
         Relationships: [];
       };
+      employee_working_hours: {
+        Row: {
+          id: string;
+          employee_id: string;
+          day_of_week: number;
+          is_closed: boolean;
+          is_24_hours: boolean;
+          starts_at: string | null;
+          ends_at: string | null;
+          break_starts_at: string | null;
+          break_ends_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          employee_id: string;
+          day_of_week: number;
+          is_closed?: boolean;
+          is_24_hours?: boolean;
+          starts_at?: string | null;
+          ends_at?: string | null;
+          break_starts_at?: string | null;
+          break_ends_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["employee_working_hours"]["Insert"]>;
+        Relationships: [];
+      };
+      // No status column — "active" means ended_at IS NULL (see the
+      // partial UNIQUE index restricting an employee to one active shift
+      // at a time), "completed" means it's set. Derived in the UI, not stored.
+      shifts: {
+        Row: {
+          id: string;
+          employee_id: string;
+          station_id: string;
+          started_at: string;
+          ended_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          employee_id: string;
+          station_id: string;
+          started_at?: string;
+          ended_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["shifts"]["Insert"]>;
+        Relationships: [];
+      };
+      // Keyed by the global service (services.id), not a station's specific
+      // offering — a skill belongs to the person. See
+      // supabase/migrations/20240101000200_employee_service_capabilities.sql.
+      employee_service_capabilities: {
+        Row: {
+          id: string;
+          employee_id: string;
+          service_id: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          employee_id: string;
+          service_id: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["employee_service_capabilities"]["Insert"]>;
+        Relationships: [];
+      };
       bookings: {
         Row: {
           id: string;
@@ -468,6 +537,14 @@ export interface Database {
       };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      // SECURITY DEFINER, OWNER/MANAGER-only (see
+      // supabase/migrations/20240101000110_rls_identity.sql) — used to
+      // promote an existing profile to EMPLOYEE. RETURNS void.
+      set_profile_role: {
+        Args: { p_profile_id: string; p_role: UserRole };
+        Returns: null;
+      };
+    };
   };
 }
