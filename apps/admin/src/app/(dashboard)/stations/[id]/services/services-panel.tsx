@@ -4,8 +4,9 @@ import { useActionState, useState, useTransition } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { enableServiceAction, setStationServiceActiveAction, type ServiceActionState } from "./actions";
+import { createServiceAction, enableServiceAction, setStationServiceActiveAction, type ServiceActionState } from "./actions";
 
 export interface EnabledServiceRow {
   stationServiceId: string;
@@ -59,6 +60,74 @@ function DisableToggle({
   );
 }
 
+const TEXTAREA_CLASSES =
+  "block w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500";
+
+function CreateServiceForm({ stationId }: { stationId: string }) {
+  const [state, formAction, isPending] = useActionState(createServiceAction, INITIAL_STATE);
+
+  return (
+    <form action={formAction} className="mt-4 space-y-4 rounded-md border border-slate-200 bg-slate-50 p-4">
+      <input type="hidden" name="station_id" value={stationId} />
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div>
+          <Label htmlFor="new_name_en">Name (English)</Label>
+          <Input id="new_name_en" name="name_en" required />
+        </div>
+        <div>
+          <Label htmlFor="new_name_ar">Name (Arabic)</Label>
+          <Input id="new_name_ar" name="name_ar" dir="rtl" required />
+        </div>
+        <div>
+          <Label htmlFor="new_base_price">Catalog price (EGP)</Label>
+          <Input id="new_base_price" name="base_price" type="number" step="0.01" min={0} required />
+        </div>
+        <div>
+          <Label htmlFor="new_duration_minutes">Duration (minutes)</Label>
+          <Input id="new_duration_minutes" name="duration_minutes" type="number" step="1" min={1} required />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div>
+          <Label htmlFor="new_description_en">Description (English, optional)</Label>
+          <textarea id="new_description_en" name="description_en" rows={2} className={TEXTAREA_CLASSES} />
+        </div>
+        <div>
+          <Label htmlFor="new_description_ar">Description (Arabic, optional)</Label>
+          <textarea id="new_description_ar" name="description_ar" dir="rtl" rows={2} className={TEXTAREA_CLASSES} />
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-6">
+        <label className="flex items-center gap-2 text-sm text-slate-700">
+          <input type="checkbox" name="requires_employee_selection" className="rounded border-slate-300" />
+          Customer must pick an employee
+        </label>
+        <label className="flex items-center gap-2 text-sm text-slate-700">
+          <input type="checkbox" name="requires_resource" className="rounded border-slate-300" />
+          Needs a resource (e.g. a bay)
+        </label>
+        <label className="flex items-center gap-2 text-sm text-slate-700">
+          <input type="checkbox" name="is_active" defaultChecked className="rounded border-slate-300" />
+          Active immediately
+        </label>
+      </div>
+
+      {state.error && (
+        <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+          {state.error}
+        </p>
+      )}
+
+      <Button type="submit" disabled={isPending}>
+        {isPending ? "Creating..." : "Create & enable here"}
+      </Button>
+    </form>
+  );
+}
+
 export function ServicesPanel({
   stationId,
   enabled,
@@ -69,6 +138,7 @@ export function ServicesPanel({
   available: AvailableService[];
 }) {
   const [state, formAction, isPending] = useActionState(enableServiceAction, INITIAL_STATE);
+  const [showCreateForm, setShowCreateForm] = useState(false);
 
   return (
     <div>
@@ -153,6 +223,13 @@ export function ServicesPanel({
           {state.error}
         </p>
       )}
+
+      <div className="mt-4">
+        <Button variant="secondary" onClick={() => setShowCreateForm((v) => !v)}>
+          {showCreateForm ? "Cancel" : "+ Create a new service"}
+        </Button>
+        {showCreateForm && <CreateServiceForm stationId={stationId} />}
+      </div>
     </div>
   );
 }

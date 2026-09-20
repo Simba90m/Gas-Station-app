@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import type { ResourceStatus } from "@gas-station/types";
 import { createClient } from "@/lib/supabase/server";
 import { validateHourRows, type HourRowInput } from "../../schema";
-import { enableServiceSchema, priceOverrideSchema, resourceFormSchema } from "./schema";
+import { createServiceSchema, enableServiceSchema, priceOverrideSchema, resourceFormSchema } from "./schema";
 
 export interface ServiceActionState {
   error?: string;
@@ -32,6 +32,60 @@ export async function enableServiceAction(_prevState: ServiceActionState, formDa
     // 23505 = unique_violation: (station_id, service_id) already exists.
     if (error.code === "23505") return { error: "This service is already enabled at this station." };
     return { error: error.message };
+  }
+
+  revalidatePath(`/stations/${stationId}`);
+  return {};
+}
+
+/**
+ * Creates a new global catalog service and immediately enables it at the
+ * current station — never a station-specific duplicate of the service
+ * itself. Two inserts (services, then station_services), not one RPC:
+ * supabase-js has no multi-statement transaction API, and if the second
+ * insert fails the first already succeeded as a perfectly valid, reusable
+ * catalog entry — other stations (or this one, from the existing "enable a
+ * catalog service" list) can still pick it up, so a partial failure here
+ * is reported plainly rather than treated as if nothing happened.
+ */
+export async function createServiceAction(_prevState: ServiceActionState, formData: FormData): Promise<ServiceActionState> {
+  const stationId = requiredField(formData, "station_id");
+  if (!stationId) return { error: "Missing station id." };
+
+  const parsed = createServiceSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Check your input and try again." };
+
+  const supabase = await createClient();
+  const { data: service, error: serviceError } = await supabase
+    .from("services")
+    .insert({
+      name_en: parsed.data.name_en,
+      name_ar: parsed.data.name_ar,
+      description_en: parsed.data.description_en,
+      description_ar: parsed.data.description_ar,
+      base_price: parsed.data.base_price,
+      duration_minutes: parsed.data.duration_minutes,
+      requires_employee_selection: formData.get("requires_employee_selection") === "on",
+      requires_resource: formData.get("requires_resource") === "on",
+      is_active: formData.get("is_active") === "on",
+    })
+    .select("id")
+    .single();
+
+  if (serviceError || !service) {
+    // services_write requires OWNER/MANAGER — a station manager submitting
+    // this gets a real RLS error here, same pattern as createStationAction.
+    return { error: serviceError?.message ?? "You don't have permission to create a service." };
+  }
+
+  const { error: linkError } = await supabase
+    .from("station_services")
+    .insert({ station_id: stationId, service_id: service.id });
+
+  if (linkError) {
+    return {
+      error: `The service was created, but couldn't be enabled at this station automatically (${linkError.message}). Enable it from the list above.`,
+    };
   }
 
   revalidatePath(`/stations/${stationId}`);

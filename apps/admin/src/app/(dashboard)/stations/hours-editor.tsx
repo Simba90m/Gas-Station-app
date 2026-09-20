@@ -41,6 +41,33 @@ interface HoursEditorProps {
   onSave: (rows: HourRowInput[]) => Promise<{ error?: string }>;
 }
 
+/**
+ * A disabled native <input type="time"> renders inconsistently across
+ * browsers — often almost white/washed out, reading as broken rather than
+ * intentionally unavailable. For "closed"/"24h" (where opens_at/closes_at
+ * genuinely don't apply — see is_valid_hours_row), this shows a clearly
+ * inert placeholder instead of a disabled input at all; "custom" always
+ * gets the real, fully-enabled input with normal readable styling.
+ */
+function TimeCell({ mode, value, onChange }: { mode: HoursMode; value: string; onChange: (value: string) => void }) {
+  if (mode !== "custom") {
+    return (
+      <div className="flex h-9 items-center justify-center rounded-md border border-dashed border-slate-300 bg-slate-50 text-sm text-slate-400">
+        {mode === "closed" ? "Closed" : "24 hours"}
+      </div>
+    );
+  }
+
+  return (
+    <input
+      type="time"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="h-9 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-900 focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+    />
+  );
+}
+
 export function HoursEditor({ initialRows, onSave }: HoursEditorProps) {
   const [rows, setRows] = useState<HourRowInput[]>(() =>
     DAY_LABELS.map((_, dayOfWeek) => toRow(initialRows.find((r) => r.day_of_week === dayOfWeek), dayOfWeek)),
@@ -95,21 +122,17 @@ export function HoursEditor({ initialRows, onSave }: HoursEditorProps) {
                   </select>
                 </td>
                 <td className="py-2 pr-2">
-                  <input
-                    type="time"
-                    disabled={row.mode !== "custom"}
+                  <TimeCell
+                    mode={row.mode}
                     value={row.opens_at}
-                    onChange={(e) => updateRow(index, { opens_at: e.target.value })}
-                    className="rounded-md border border-slate-300 px-2 py-1 text-sm disabled:bg-slate-100 disabled:text-slate-400"
+                    onChange={(value) => updateRow(index, { opens_at: value })}
                   />
                 </td>
                 <td className="py-2">
-                  <input
-                    type="time"
-                    disabled={row.mode !== "custom"}
+                  <TimeCell
+                    mode={row.mode}
                     value={row.closes_at}
-                    onChange={(e) => updateRow(index, { closes_at: e.target.value })}
-                    className="rounded-md border border-slate-300 px-2 py-1 text-sm disabled:bg-slate-100 disabled:text-slate-400"
+                    onChange={(value) => updateRow(index, { closes_at: value })}
                   />
                 </td>
               </tr>
