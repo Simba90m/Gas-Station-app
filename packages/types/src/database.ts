@@ -144,6 +144,12 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["station_operating_hours"]["Insert"]>;
         Relationships: [];
       };
+      // parent_service_id: NULL for a standalone service or a package group
+      // ("Car Wash"); set for a package option ("Basic"/"Premium"/"VIP").
+      // Max two levels, enforced by check_service_hierarchy_depth() — see
+      // supabase/migrations/20240101000230_booking_engine.sql. A service
+      // with children is never itself bookable (enforced in
+      // get_available_slots()/create_booking(), not by a DB constraint).
       services: {
         Row: {
           id: string;
@@ -157,6 +163,7 @@ export interface Database {
           requires_employee_selection: boolean;
           requires_resource: boolean;
           is_active: boolean;
+          parent_service_id: string | null;
           created_at: string;
           updated_at: string;
           deleted_at: string | null;
@@ -173,6 +180,7 @@ export interface Database {
           requires_employee_selection?: boolean;
           requires_resource?: boolean;
           is_active?: boolean;
+          parent_service_id?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["services"]["Insert"]>;
         Relationships: [];
@@ -464,6 +472,9 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["offers"]["Insert"]>;
         Relationships: [];
       };
+      // converted_booking_id: set when a walk-in queue entry is converted
+      // into a real booking (Phase 7.4 — schema only for now). See
+      // supabase/migrations/20240101000230_booking_engine.sql.
       queue_entries: {
         Row: {
           id: string;
@@ -475,6 +486,7 @@ export interface Database {
           joined_at: string;
           called_at: string | null;
           completed_at: string | null;
+          converted_booking_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -488,6 +500,7 @@ export interface Database {
           joined_at?: string;
           called_at?: string | null;
           completed_at?: string | null;
+          converted_booking_id?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["queue_entries"]["Insert"]>;
         Relationships: [];
@@ -544,6 +557,42 @@ export interface Database {
       set_profile_role: {
         Args: { p_profile_id: string; p_role: UserRole };
         Returns: null;
+      };
+      // Read-only; SECURITY DEFINER, callable by anon and authenticated.
+      // Returns only genuinely bookable slots (never a padded list of
+      // disabled ones) — see
+      // supabase/migrations/20240101000230_booking_engine.sql.
+      get_available_slots: {
+        Args: {
+          p_station_id: string;
+          p_service_id: string;
+          p_date: string;
+          p_employee_id?: string | null;
+        };
+        Returns: {
+          slot_start: string;
+          slot_end: string;
+          candidate_employee_ids: string[] | null;
+          candidate_resource_ids: string[] | null;
+        }[];
+      };
+      // SECURITY DEFINER; the only way a booking is ever inserted through
+      // the API. Reimplements bookings_insert's authorization itself
+      // (owns_customer_row OR is_station_staff), re-validates availability
+      // at booking time, and lets the existing EXCLUDE constraints on
+      // bookings be the final race-condition authority. Returns the created
+      // bookings row (status always 'CONFIRMED').
+      create_booking: {
+        Args: {
+          p_customer_id: string;
+          p_station_id: string;
+          p_service_id: string;
+          p_start_at: string;
+          p_employee_id?: string | null;
+          p_resource_id?: string | null;
+          p_notes?: string | null;
+        };
+        Returns: Database["public"]["Tables"]["bookings"]["Row"];
       };
     };
   };
