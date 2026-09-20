@@ -702,16 +702,19 @@ export interface Database {
         Args: { p_customer_id: string; p_station_service_id: string };
         Returns: Database["public"]["Tables"]["queue_entries"]["Row"];
       };
-      // Read-only, service_role-only. position/status plus a derived rank
-      // (how many WAITING/CALLED entries are ahead in the same queue) and a
-      // simple estimated_wait_minutes (rank * that service's duration) —
-      // used both right after kiosk_join_queue() and for later polling.
+      // Read-only, service_role-only. queue_position/status plus a derived
+      // rank (how many WAITING/CALLED entries are ahead in the same queue)
+      // and a simple estimated_wait_minutes (rank * that service's
+      // duration) — used both right after kiosk_join_queue() and for later
+      // polling. Named queue_position, not position — POSITION is a
+      // reserved SQL keyword and can't be an unquoted RETURNS TABLE column
+      // name (see supabase/migrations/20240101000260_global_phone_and_kiosk.sql).
       kiosk_queue_status: {
         Args: { p_queue_entry_id: string };
         Returns: {
           id: string;
           queue_id: string;
-          position: number;
+          queue_position: number;
           status: QueueStatus;
           rank: number;
           estimated_wait_minutes: number;

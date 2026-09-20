@@ -378,12 +378,25 @@ GRANT EXECUTE ON FUNCTION public.kiosk_join_queue(uuid, uuid) TO service_role;
 -- place. rank = how many WAITING/CALLED entries are ahead in the same
 -- queue; estimated_wait_minutes = rank * that service's duration, the same
 -- "simple estimate" a human would make, not a scheduling prediction.
+--
+-- The returned column is named queue_position, not position: POSITION is a
+-- reserved SQL keyword (it doubles as the special two-argument syntax
+-- POSITION(substring IN string), similar to SUBSTRING/EXTRACT/OVERLAY), and
+-- while that's harmless as an ordinary table column (queue_entries.position
+-- itself works fine and is unchanged) or in a normal SELECT/WHERE
+-- expression, PostgreSQL's grammar for a RETURNS TABLE(...) column list
+-- uses the same restricted identifier class as a function's own parameter
+-- names, which does not accept it unquoted — "syntax error at or near
+-- 'position'". Renaming the OUTPUT column (rather than quoting it
+-- everywhere it would need to appear, including in every caller) is the
+-- standard fix and keeps every other name here — rank, status,
+-- estimated_wait_minutes — exactly as designed; none of those are reserved.
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public._queue_ticket_status(p_queue_entry_id uuid)
 RETURNS TABLE (
   id uuid,
   queue_id uuid,
-  position integer,
+  queue_position integer,
   status public.queue_status,
   rank integer,
   estimated_wait_minutes integer
@@ -396,7 +409,7 @@ AS $$
   SELECT
     e.id,
     e.queue_id,
-    e.position,
+    e.position AS queue_position,
     e.status,
     (
       SELECT count(*)::int FROM public.queue_entries e2
@@ -417,7 +430,7 @@ CREATE OR REPLACE FUNCTION public.kiosk_queue_status(p_queue_entry_id uuid)
 RETURNS TABLE (
   id uuid,
   queue_id uuid,
-  position integer,
+  queue_position integer,
   status public.queue_status,
   rank integer,
   estimated_wait_minutes integer
