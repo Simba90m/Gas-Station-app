@@ -89,7 +89,7 @@ export default async function StationDetailPage({ params }: { params: Promise<{ 
           hours — set per service below.
         </p>
         <div className="mt-4">
-          <HoursEditor initialRows={hours ?? []} onSave={(rows) => upsertStationHoursAction(station.id, rows)} />
+          <HoursEditor initialRows={hours ?? []} onSave={upsertStationHoursAction.bind(null, station.id)} />
         </div>
       </Card>
 

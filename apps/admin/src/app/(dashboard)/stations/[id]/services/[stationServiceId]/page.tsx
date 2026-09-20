@@ -81,7 +81,7 @@ export default async function StationServiceDetailPage({
         <div className="mt-4">
           <HoursEditor
             initialRows={hours ?? []}
-            onSave={(rows) => upsertServiceHoursAction(stationId, stationServiceId, rows)}
+            onSave={upsertServiceHoursAction.bind(null, stationId, stationServiceId)}
           />
         </div>
       </Card>

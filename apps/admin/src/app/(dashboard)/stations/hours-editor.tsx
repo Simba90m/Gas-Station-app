@@ -27,7 +27,17 @@ function toRow(existing: InitialHourRow | undefined, dayOfWeek: number): HourRow
 
 interface HoursEditorProps {
   initialRows: InitialHourRow[];
-  /** Persists the full week of rows — e.g. upsertStationHoursAction(stationId, rows) or upsertServiceHoursAction(stationServiceId, rows). */
+  /**
+   * Persists the full week of rows. Passed in from a Server Component as a
+   * Server Action bound to whatever id it already has in scope — e.g.
+   * `upsertStationHoursAction.bind(null, stationId)` or
+   * `upsertServiceHoursAction.bind(null, stationId, stationServiceId)` —
+   * never an inline arrow function. A plain closure isn't a real Server
+   * Action reference, so React can't serialize it across the Server →
+   * Client Component boundary ("Event handlers cannot be passed to Client
+   * Component props"); a bound Server Action is specifically what that
+   * boundary supports.
+   */
   onSave: (rows: HourRowInput[]) => Promise<{ error?: string }>;
 }
 
