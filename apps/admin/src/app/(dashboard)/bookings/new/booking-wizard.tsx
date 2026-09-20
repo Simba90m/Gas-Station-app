@@ -142,9 +142,6 @@ export function BookingWizard({
       employeeId: employeeId || null,
       notes: notes || null,
     };
-    // Diagnostic: logs in the browser console exactly what's about to be
-    // sent, straight from the same selectedCustomer Review/canConfirm read.
-    console.error("[booking-wizard] confirm payload:", payload);
     startTransition(async () => {
       const result = await createManualBookingAction(payload);
       if (result.error) {

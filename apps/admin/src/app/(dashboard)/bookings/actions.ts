@@ -199,12 +199,6 @@ export async function createManualBookingAction(input: {
   employeeId: string | null;
   notes: string | null;
 }): Promise<{ bookingId?: string; error?: string }> {
-  // Diagnostic: the wizard already guards against calling this without a
-  // selected customer/slot, so if customerId ever arrives empty here, this
-  // line (not the client-side guard) is the authoritative place to see it —
-  // logs server-side, never sent to the browser.
-  console.error("[createManualBookingAction] received input:", input);
-
   const parsed = createManualBookingSchema.safeParse({
     customer_id: input.customerId,
     station_id: input.stationId,
@@ -218,7 +212,6 @@ export async function createManualBookingAction(input: {
     // schema, so if multiple fields were ever invalid at once, showing only
     // issues[0] would always blame the customer even when it's not the
     // actual (or only) problem.
-    console.error("[createManualBookingAction] validation failed:", parsed.error.issues);
     return { error: parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join(" ") };
   }
 
