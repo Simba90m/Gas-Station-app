@@ -394,6 +394,32 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["bookings"]["Insert"]>;
         Relationships: [];
       };
+      // Populated only by the record_booking_status_change trigger — never
+      // written by the app directly (no INSERT/UPDATE/DELETE policy for
+      // authenticated on this table; see 20240101000130_rls_bookings.sql
+      // and the SECURITY DEFINER fix in
+      // 20240101000240_fix_booking_status_history_trigger_security.sql).
+      booking_status_history: {
+        Row: {
+          id: string;
+          booking_id: string;
+          status: BookingStatus;
+          changed_by: string | null;
+          note: string | null;
+          created_at: string;
+        };
+        // Never inserted by the app — typed to match what the schema
+        // declares, same as the real generator would produce.
+        Insert: {
+          id?: string;
+          booking_id: string;
+          status: BookingStatus;
+          changed_by?: string | null;
+          note?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["booking_status_history"]["Insert"]>;
+        Relationships: [];
+      };
       complaints: {
         Row: {
           id: string;

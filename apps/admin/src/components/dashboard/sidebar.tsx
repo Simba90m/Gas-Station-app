@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { href: "/", label: "Dashboard" },
   { href: "/stations", label: "Stations" },
   { href: "/employees", label: "Employees" },
+  { href: "/bookings", label: "Bookings" },
 ] as const;
 
 export function Sidebar() {
