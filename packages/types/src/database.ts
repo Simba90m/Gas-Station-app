@@ -671,6 +671,52 @@ export interface Database {
         Args: { p_queue_entry_id: string };
         Returns: Database["public"]["Tables"]["queue_entries"]["Row"];
       };
+      // Read-only, anon-reachable. Boolean only — never a name/id — see
+      // supabase/migrations/20240101000260_global_phone_and_kiosk.sql.
+      customer_phone_registered: {
+        Args: { p_phone: string };
+        Returns: boolean;
+      };
+      // SECURITY DEFINER, service_role-only. Same booking-creation core as
+      // create_booking(), different (sessionless) authorization: p_customer_id
+      // must be a real CUSTOMER profile, not owns_customer_row()/
+      // is_station_staff() — see
+      // supabase/migrations/20240101000260_global_phone_and_kiosk.sql for why
+      // the public kiosk flow never establishes a browser session.
+      kiosk_create_booking: {
+        Args: {
+          p_customer_id: string;
+          p_station_id: string;
+          p_service_id: string;
+          p_start_at: string;
+          p_employee_id?: string | null;
+          p_resource_id?: string | null;
+          p_notes?: string | null;
+        };
+        Returns: Database["public"]["Tables"]["bookings"]["Row"];
+      };
+      // SECURITY DEFINER, service_role-only. Same queue-join core as
+      // join_queue(), sessionless authorization (CUSTOMER profile check
+      // instead of owns_customer_row()/is_station_staff()).
+      kiosk_join_queue: {
+        Args: { p_customer_id: string; p_station_service_id: string };
+        Returns: Database["public"]["Tables"]["queue_entries"]["Row"];
+      };
+      // Read-only, service_role-only. position/status plus a derived rank
+      // (how many WAITING/CALLED entries are ahead in the same queue) and a
+      // simple estimated_wait_minutes (rank * that service's duration) —
+      // used both right after kiosk_join_queue() and for later polling.
+      kiosk_queue_status: {
+        Args: { p_queue_entry_id: string };
+        Returns: {
+          id: string;
+          queue_id: string;
+          position: number;
+          status: QueueStatus;
+          rank: number;
+          estimated_wait_minutes: number;
+        }[];
+      };
     };
   };
 }

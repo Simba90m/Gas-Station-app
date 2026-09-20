@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import type { BookingStatus } from "@gas-station/types";
 import { getCurrentAdminUser } from "@/lib/current-user";
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createCustomerAccount } from "@/lib/customer-account";
 import { cancelBookingSchema, createCustomerSchema, createManualBookingSchema } from "./schema";
 
 export async function updateBookingStatusAction(bookingId: string, status: BookingStatus): Promise<{ error?: string }> {
@@ -96,8 +96,10 @@ export async function searchCustomersAction(query: string): Promise<{ results: C
  * other privileged operation in this schema, there's no SECURITY DEFINER
  * Postgres function that can do this instead, because it isn't a table
  * write at all — it's a call to Supabase's Auth Admin API, which only the
- * service role key can make. That's why this is the one place this app
- * uses lib/supabase/admin.ts.
+ * service role key can make. The actual account creation is shared with
+ * the public QR kiosk flow via lib/customer-account.ts (one function, not
+ * two copies of the same logic) — this action is just that shared
+ * helper's staff-only authorization gate.
  *
  * Security: the service role client itself has no notion of who's
  * calling, so this function does its own authorization check first
@@ -121,34 +123,30 @@ export async function createCustomerAction(input: {
     return { error: parsed.error.issues.map((issue) => issue.message).join(" ") || "Check your input and try again." };
   }
 
-  // createAdminClient() reads SUPABASE_SERVICE_ROLE_KEY and throws if it's
-  // missing — that's the right behavior for a genuinely misconfigured
-  // server, but it must never escape this action as an uncaught exception:
-  // an uncaught Server Action error propagates to the nearest error
-  // boundary, which is scoped to the whole /bookings/new route segment —
-  // it would replace the entire page with an error screen, which is
-  // exactly what looked like "the page requires this env var to render"
-  // even though nothing on the page itself ever touches this client. This
-  // try/catch is what actually confines a missing-config failure to a
-  // normal, localized submitError in the wizard, only at the moment
-  // "Create customer" is actually clicked.
+  // createCustomerAccount() calls createAdminClient(), which reads
+  // SUPABASE_SERVICE_ROLE_KEY and throws if it's missing — that's the
+  // right behavior for a genuinely misconfigured server, but it must never
+  // escape this action as an uncaught exception: an uncaught Server Action
+  // error propagates to the nearest error boundary, which is scoped to the
+  // whole /bookings/new route segment — it would replace the entire page
+  // with an error screen, which is exactly what looked like "the page
+  // requires this env var to render" even though nothing on the page
+  // itself ever touches this client. This try/catch is what actually
+  // confines a missing-config failure to a normal, localized submitError
+  // in the wizard, only at the moment "Create customer" is actually
+  // clicked.
   try {
-    const supabaseAdmin = createAdminClient();
-    const { data, error } = await supabaseAdmin.auth.admin.createUser({
-      phone: parsed.data.phone,
-      phone_confirm: true,
-      user_metadata: { full_name: parsed.data.full_name },
-    });
-
-    if (error || !data.user) {
-      if (/already|exists/i.test(error?.message ?? "")) {
-        return { error: "A customer with this phone number already exists — try searching instead." };
-      }
-      return { error: error?.message || "Couldn't create the customer account." };
+    const result = await createCustomerAccount({ fullName: parsed.data.full_name, phone: parsed.data.phone });
+    if (result.error || !result.customerId) {
+      return {
+        error: result.duplicatePhone
+          ? "A customer with this phone number already exists — try searching instead."
+          : result.error,
+      };
     }
 
     return {
-      customer: { id: data.user.id, fullName: parsed.data.full_name, phone: parsed.data.phone },
+      customer: { id: result.customerId, fullName: parsed.data.full_name, phone: parsed.data.phone },
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Couldn't create the customer account.";

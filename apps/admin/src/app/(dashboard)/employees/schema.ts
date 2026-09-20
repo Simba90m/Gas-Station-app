@@ -1,14 +1,18 @@
 import { z } from "zod";
+import { isValidE164 } from "@gas-station/utils";
 
-// Matches the CHECK constraint on profiles.phone exactly (Egyptian mobile:
-// +20 then 10/11/12/15 then 8 digits) — client-side validation mirrors it
-// for early feedback; the database enforces it regardless.
+// The PhoneInput component (components/ui/phone-input.tsx) already
+// normalizes to E.164 before this ever runs — this just matches the
+// database CHECK constraint on profiles.phone exactly (E.164, any country,
+// not Egypt-only) as a final guard, the same @gas-station/utils function
+// both layers share so there's exactly one definition of "valid phone" in
+// this codebase.
 const phoneSchema = z
   .string()
   .trim()
   .optional()
   .transform((v) => v || null)
-  .refine((v) => v === null || /^\+20(10|11|12|15)[0-9]{8}$/.test(v), "Enter a valid Egyptian mobile number, e.g. +201012345678.");
+  .refine((v) => v === null || isValidE164(v), "Enter a valid phone number.");
 
 export const promoteToEmployeeSchema = z.object({
   profile_id: z.string().trim().uuid("Choose an existing account to promote."),

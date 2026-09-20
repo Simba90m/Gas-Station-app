@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isValidE164 } from "@gas-station/utils";
 
 export const cancelBookingSchema = z.object({
   cancellation_reason: z
@@ -9,18 +10,15 @@ export const cancelBookingSchema = z.object({
     .transform((v) => v || null),
 });
 
-// Matches the CHECK constraint on profiles.phone exactly (Egyptian mobile:
-// +20 then 10/11/12/15 then 8 digits) — same pattern as employees/schema.ts's
-// phoneSchema, duplicated here (not exported there) rather than required,
-// since a walk-in customer needs a real, valid phone number to create
-// their account with — unlike an employee's phone, it can't be optional
-// here.
+// The PhoneInput component already normalizes to E.164 (any country, not
+// Egypt-only) before this runs — isValidE164 is the same
+// @gas-station/utils function employees/schema.ts's phoneSchema uses, so
+// there's exactly one definition of "valid phone" in this codebase. Unlike
+// an employee's phone, it can't be optional here — a walk-in customer
+// needs a real phone number to create their account with.
 export const createCustomerSchema = z.object({
   full_name: z.string().trim().min(1, "Name is required."),
-  phone: z
-    .string()
-    .trim()
-    .regex(/^\+20(10|11|12|15)[0-9]{8}$/, "Enter a valid Egyptian mobile number, e.g. +201012345678."),
+  phone: z.string().trim().refine(isValidE164, "Enter a valid phone number."),
 });
 
 // Deliberately z.guid() (any RFC-shaped UUID), not z.uuid() (Zod v4's

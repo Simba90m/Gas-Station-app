@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PhoneInput } from "@/components/ui/phone-input";
 import {
   createCustomerAction,
   createManualBookingAction,
@@ -222,15 +223,12 @@ export function BookingWizard({
                     onChange={(e) => setNewCustomerName(e.target.value)}
                   />
                 </div>
-                <div>
-                  <Label htmlFor="new_customer_phone">Phone</Label>
-                  <Input
-                    id="new_customer_phone"
-                    placeholder="+201012345678"
-                    value={newCustomerPhone}
-                    onChange={(e) => setNewCustomerPhone(e.target.value)}
-                  />
-                </div>
+                <PhoneInput
+                  id="new_customer_phone"
+                  label="Phone"
+                  value={newCustomerPhone}
+                  onChange={(e164) => setNewCustomerPhone(e164 ?? "")}
+                />
                 {createCustomerError && <p className="text-sm text-red-700">{createCustomerError}</p>}
                 <div className="flex gap-2">
                   <Button onClick={handleCreateCustomer} disabled={isPending}>

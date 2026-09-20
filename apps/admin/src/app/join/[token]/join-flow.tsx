@@ -5,16 +5,19 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
+import { PhoneInput } from "@/components/ui/phone-input";
 import {
-  bookSlotPublicAction,
+  bookSlotAction,
   getAvailableSlotsPublicAction,
-  joinAsNewCustomerAction,
-  joinQueuePublicAction,
+  getQueueStatusAction,
+  identifyPhoneAction,
+  startWalkInAction,
   type PublicServiceOption,
   type PublicStationOption,
+  type QueueTicket,
 } from "./actions";
 
-type Mode = "queue" | "book";
+type Mode = "walk-in" | "book";
 
 function todayLocalDate(): string {
   const now = new Date();
@@ -40,10 +43,18 @@ export function JoinFlow({
   const [slotsError, setSlotsError] = useState<string | undefined>();
   const [selectedSlot, setSelectedSlot] = useState<{ start: string; end: string } | null>(null);
 
+  // Phone-first identification: the same phone field drives both "this
+  // number already has an account, just continue" and "brand new — also
+  // collect a name" — never a forced "Create Account" step for a returning
+  // customer.
+  const [phone, setPhone] = useState<string | null>(null);
+  const [identifyError, setIdentifyError] = useState<string | undefined>();
+  const [identified, setIdentified] = useState<{ exists: boolean; phone: string } | null>(null);
   const [fullName, setFullName] = useState("");
-  const [phone, setPhone] = useState("");
+
   const [submitError, setSubmitError] = useState<string | undefined>();
-  const [success, setSuccess] = useState<{ kind: Mode } | null>(null);
+  const [ticket, setTicket] = useState<QueueTicket | null>(null);
+  const [bookingConfirmed, setBookingConfirmed] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   const servicesForStation = useMemo(() => services.filter((s) => s.stationId === stationId), [services, stationId]);
@@ -52,9 +63,18 @@ export function JoinFlow({
   function resetToStation() {
     setService(null);
     setMode(null);
+    resetIdentity();
+  }
+
+  function resetIdentity() {
     setSlots(null);
     setSelectedSlot(null);
     setSlotsError(undefined);
+    setPhone(null);
+    setIdentifyError(undefined);
+    setIdentified(null);
+    setFullName("");
+    setSubmitError(undefined);
   }
 
   function handleFindSlots() {
@@ -69,29 +89,47 @@ export function JoinFlow({
     });
   }
 
-  function handleSubmit() {
-    if (!service || !mode) return;
-    if (mode === "book" && !selectedSlot) {
-      setSubmitError("Choose an available time first.");
+  function handleIdentify() {
+    if (!phone) {
+      setIdentifyError("Enter a valid phone number.");
+      return;
+    }
+    setIdentifyError(undefined);
+    setIdentified(null);
+    startTransition(async () => {
+      const result = await identifyPhoneAction(token, phone);
+      if (result.error || result.exists === undefined) {
+        setIdentifyError(result.error ?? "Couldn't check that number — please try again.");
+        return;
+      }
+      setIdentified({ exists: result.exists, phone: result.normalizedPhone ?? phone });
+    });
+  }
+
+  function handleConfirmIdentity() {
+    if (!identified || !service || !mode) return;
+    if (!identified.exists && !fullName.trim()) {
+      setSubmitError("Enter your name to create an account.");
       return;
     }
     setSubmitError(undefined);
 
     startTransition(async () => {
-      const customerResult = await joinAsNewCustomerAction(token, { fullName, phone });
-      if (customerResult.error) {
-        setSubmitError(customerResult.error);
-        return;
-      }
-
-      if (mode === "queue") {
-        const result = await joinQueuePublicAction(token, { stationServiceId: service.stationServiceId });
-        if (result.error) {
-          setSubmitError(result.error);
+      if (mode === "walk-in") {
+        const result = await startWalkInAction(token, {
+          phone: identified.phone,
+          fullName: identified.exists ? null : fullName.trim(),
+          stationServiceId: service.stationServiceId,
+        });
+        if (result.error || !result.ticket) {
+          setSubmitError(result.error ?? "Couldn't join the queue.");
           return;
         }
+        setTicket(result.ticket);
       } else if (selectedSlot) {
-        const result = await bookSlotPublicAction(token, {
+        const result = await bookSlotAction(token, {
+          phone: identified.phone,
+          fullName: identified.exists ? null : fullName.trim(),
           stationId: service.stationId,
           serviceId: service.serviceId,
           startAt: selectedSlot.start,
@@ -100,23 +138,49 @@ export function JoinFlow({
           setSubmitError(result.error);
           return;
         }
+        setBookingConfirmed(true);
       }
-
-      setSuccess({ kind: mode });
     });
   }
 
-  if (success) {
+  function handleRefreshTicket() {
+    if (!ticket) return;
+    startTransition(async () => {
+      const result = await getQueueStatusAction(token, ticket.queueEntryId);
+      if (result.ticket) setTicket(result.ticket);
+    });
+  }
+
+  // Final step: the ticket (walk-in) or confirmation (booking).
+  if (ticket) {
     return (
       <Card className="text-center">
-        <h2 className="text-lg font-semibold text-slate-900">
-          {success.kind === "queue" ? "You're in the queue!" : "Booking confirmed!"}
-        </h2>
-        <p className="mt-2 text-sm text-slate-600">
-          {success.kind === "queue"
-            ? "Staff will call you when it's your turn. You can put your phone away."
-            : "We'll see you at your scheduled time."}
-        </p>
+        <h2 className="text-lg font-semibold text-slate-900">You&apos;re in the queue!</h2>
+        <p className="mt-1 text-sm text-slate-500">Staff will call you when it&apos;s your turn.</p>
+        <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-4">
+          <p className="text-3xl font-bold text-slate-900">#{ticket.position}</p>
+          <p className="mt-1 text-sm text-slate-600">Your ticket number</p>
+          <dl className="mt-4 grid grid-cols-2 gap-2 text-sm">
+            <dt className="text-slate-500">Ahead of you</dt>
+            <dd className="text-right font-medium text-slate-900">{ticket.rank}</dd>
+            <dt className="text-slate-500">Estimated wait</dt>
+            <dd className="text-right font-medium text-slate-900">~{ticket.estimatedWaitMinutes} min</dd>
+            <dt className="text-slate-500">Status</dt>
+            <dd className="text-right font-medium text-slate-900">{ticket.status.replace("_", " ")}</dd>
+          </dl>
+        </div>
+        <Button variant="secondary" className="mt-4" onClick={handleRefreshTicket} disabled={isPending}>
+          {isPending ? "Refreshing..." : "Refresh status"}
+        </Button>
+      </Card>
+    );
+  }
+
+  if (bookingConfirmed) {
+    return (
+      <Card className="text-center">
+        <h2 className="text-lg font-semibold text-slate-900">Booking confirmed!</h2>
+        <p className="mt-2 text-sm text-slate-600">We&apos;ll see you at your scheduled time.</p>
       </Card>
     );
   }
@@ -175,7 +239,8 @@ export function JoinFlow({
     );
   }
 
-  // Step 3: queue vs book.
+  // Step 3: what do you need? — walk-in now, or a specific future time.
+  // Never shows booking slots as part of "I'm here now".
   if (!mode) {
     return (
       <Card>
@@ -187,21 +252,23 @@ export function JoinFlow({
             Change
           </Button>
         </div>
-        <div className="space-y-2">
+        <Label>What do you need?</Label>
+        <div className="mt-2 space-y-2">
           {service.queueIsOpen && (
-            <Button className="w-full" onClick={() => setMode("queue")}>
-              Join the walk-in queue
+            <Button className="w-full" onClick={() => setMode("walk-in")}>
+              Start now (join the walk-in queue)
             </Button>
           )}
           <Button variant="secondary" className="w-full" onClick={() => setMode("book")}>
-            Book a specific time
+            Book for later
           </Button>
         </div>
       </Card>
     );
   }
 
-  // Step 4 (book mode only): pick a slot before the customer form.
+  // Step 4 (book mode only): pick a slot before identification — slots are
+  // never shown for the walk-in path.
   if (mode === "book" && !selectedSlot) {
     return (
       <Card>
@@ -257,7 +324,8 @@ export function JoinFlow({
     );
   }
 
-  // Final step: the customer form.
+  // Final step: phone-first identification, then (only if genuinely new) a
+  // name field — an existing customer never sees "Create Account".
   return (
     <Card>
       <div className="mb-3 flex items-center justify-between">
@@ -265,29 +333,64 @@ export function JoinFlow({
           {stationName} · {service.serviceName}
           {mode === "book" && selectedSlot && ` · ${new Date(selectedSlot.start).toLocaleString()}`}
         </p>
-        <Button variant="ghost" onClick={() => (mode === "book" ? setSelectedSlot(null) : setMode(null))}>
+        <Button
+          variant="ghost"
+          onClick={() => (mode === "book" ? setSelectedSlot(null) : setMode(null))}
+        >
           Back
         </Button>
       </div>
 
       <div className="space-y-3">
-        <div>
-          <Label htmlFor="join_name">Full name</Label>
-          <Input id="join_name" value={fullName} onChange={(e) => setFullName(e.target.value)} />
-        </div>
-        <div>
-          <Label htmlFor="join_phone">Phone</Label>
-          <Input
-            id="join_phone"
-            placeholder="+201012345678"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-          />
-        </div>
-        {submitError && <p className="text-sm text-red-700">{submitError}</p>}
-        <Button className="w-full" disabled={isPending || !fullName || !phone} onClick={handleSubmit}>
-          {isPending ? "Please wait..." : mode === "queue" ? "Join the queue" : "Confirm booking"}
-        </Button>
+        <PhoneInput
+          id="join_phone"
+          label="Your phone number"
+          value={phone}
+          onChange={(e164) => {
+            setPhone(e164);
+            setIdentified(null);
+            setIdentifyError(undefined);
+          }}
+        />
+
+        {!identified && (
+          <Button disabled={isPending || !phone} onClick={handleIdentify}>
+            {isPending ? "Checking..." : "Continue"}
+          </Button>
+        )}
+        {identifyError && <p className="text-sm text-red-700">{identifyError}</p>}
+
+        {identified?.exists && (
+          <div className="rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-800">
+            Welcome back! We found your account.
+          </div>
+        )}
+
+        {identified && !identified.exists && (
+          <div>
+            <Label htmlFor="join_name">Full name</Label>
+            <Input id="join_name" value={fullName} onChange={(e) => setFullName(e.target.value)} />
+          </div>
+        )}
+
+        {identified && (
+          <>
+            {submitError && <p className="text-sm text-red-700">{submitError}</p>}
+            <Button
+              className="w-full"
+              disabled={isPending || (!identified.exists && !fullName.trim())}
+              onClick={handleConfirmIdentity}
+            >
+              {isPending
+                ? "Please wait..."
+                : identified.exists
+                  ? "Confirm — it's me"
+                  : mode === "walk-in"
+                    ? "Create account & join the queue"
+                    : "Create account & confirm booking"}
+            </Button>
+          </>
+        )}
       </div>
     </Card>
   );

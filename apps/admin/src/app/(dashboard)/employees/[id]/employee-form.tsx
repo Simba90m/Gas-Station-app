@@ -4,6 +4,7 @@ import { useActionState } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { PhoneInput } from "@/components/ui/phone-input";
 import { updateEmployeeAction, type EmployeeActionState } from "../actions";
 
 const INITIAL_STATE: EmployeeActionState = {};
@@ -29,8 +30,7 @@ export function EmployeeForm({ employeeId, defaultValues }: { employeeId: string
           <Input id="full_name" name="full_name" required defaultValue={defaultValues.full_name} />
         </div>
         <div>
-          <Label htmlFor="phone">Phone</Label>
-          <Input id="phone" name="phone" defaultValue={defaultValues.phone ?? ""} placeholder="+201012345678" />
+          <PhoneInput id="phone" name="phone" label="Phone" defaultValue={defaultValues.phone} />
         </div>
         <div>
           <Label htmlFor="hire_date">Hire date</Label>

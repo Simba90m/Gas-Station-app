@@ -1,10 +1,31 @@
 "use server";
 
-import { randomBytes, timingSafeEqual } from "node:crypto";
+import { timingSafeEqual } from "node:crypto";
+import type { QueueStatus } from "@gas-station/types";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { createCustomerAccount } from "@/lib/customer-account";
 import { env } from "@/lib/env";
-import { publicJoinCustomerSchema, publicJoinQueueSchema, publicBookSlotSchema } from "./schema";
+import { publicPhoneSchema, publicStartWalkInSchema, publicBookSlotSchema } from "./schema";
+
+const MISCONFIGURED_ERROR = "This page isn't available right now — please ask a staff member for help.";
+
+/** createAdminClient() throws synchronously if SUPABASE_SERVICE_ROLE_KEY is
+ * missing — every action below that needs it wraps its call in this so a
+ * genuinely misconfigured server never escapes as an uncaught exception
+ * (which would replace this whole page with an error screen instead of a
+ * normal, localized error message — see createCustomerAction's own
+ * try/catch in (dashboard)/bookings/actions.ts for the original of this
+ * exact failure mode). */
+async function runKioskAction<T>(fn: () => Promise<T>): Promise<T | { error: string }> {
+  try {
+    return await fn();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unexpected error.";
+    console.error("[join/[token]/actions]", message);
+    return { error: MISCONFIGURED_ERROR };
+  }
+}
 
 /**
  * Every action below is reachable by anyone who has this route's URL — it
@@ -16,21 +37,37 @@ import { publicJoinCustomerSchema, publicJoinQueueSchema, publicBookSlotSchema }
  *     route param must match QR_JOIN_TOKEN (checked again in every action
  *     here, never trusted from the page alone — a Server Action is its own
  *     reachable endpoint regardless of which page rendered its trigger).
- *  2. Strict input validation (schema.ts).
- *  3. A real customer account, created here with the service-role admin
- *     client exactly like createCustomerAction does — but instead of also
- *     signing the visitor's browser into it directly, joinAsNewCustomerAction
- *     immediately establishes a genuine Supabase Auth session for that new
- *     account (see below). Every subsequent privileged operation
- *     (join_queue, create_booking) then runs as an ordinary authenticated
- *     customer call, through the exact same RLS/RPC authorization already
- *     audited for the staff-driven booking flow — nothing here duplicates
- *     or re-derives that logic.
- *  4. A phone number that already has an account is refused, never reused —
- *     a phone number isn't proof of identity, so silently signing the
- *     visitor into an existing account by phone alone would let anyone who
- *     knows a real customer's number impersonate them from this public,
- *     unauthenticated page.
+ *  2. Strict input validation (schema.ts), reusing the one global phone
+ *     utility (@gas-station/utils) every other phone field in this app
+ *     validates against.
+ *  3. No browser session, for anyone, new or returning. An earlier version
+ *     of this flow signed a brand-new customer into a real session — that
+ *     depended on Supabase's Phone auth provider (or, in a since-reverted
+ *     attempt, still needed *some* sign-in mechanism), and had no safe way
+ *     to extend the same idea to a RETURNING customer at all (resetting
+ *     their real password and signing in as them would let anyone who
+ *     merely knows their phone number impersonate them with a full
+ *     session — view/cancel their real bookings, etc. — which is exactly
+ *     the kind of broad privilege bypass this project's standing rules
+ *     forbid). So neither path ever establishes a session. Every
+ *     privileged action goes through the sessionless kiosk_* Postgres
+ *     functions instead (supabase/migrations/20240101000260_global_phone_and_kiosk.sql)
+ *     — service_role-only, called with an already-resolved customer_id,
+ *     narrowly scoped to "join this one queue" / "create this one
+ *     booking", nothing more (no profile/data access, no way to touch any
+ *     of that customer's OTHER bookings). The residual risk — someone who
+ *     knows or guesses another person's phone number could add a walk-in
+ *     entry under their name — is a low-severity nuisance, not an account
+ *     takeover, and no different in kind from a staff member already being
+ *     able to do the same today via the admin "search by phone, book for
+ *     them" flow; it just doesn't require a staff member to be the one
+ *     doing it.
+ *  4. A brand-new customer's account is still created here with the
+ *     service-role admin client, but via the SAME shared helper
+ *     (lib/customer-account.ts) the staff-only createCustomerAction uses —
+ *     not a second copy of that logic — and a phone that already has an
+ *     account is never silently reused to fabricate a duplicate; it's
+ *     looked up and continued instead (see startWalkInAction/bookSlotAction).
  */
 function tokenMatches(token: string): boolean {
   let expectedRaw: string;
@@ -47,7 +84,6 @@ function tokenMatches(token: string): boolean {
 }
 
 const INVALID_LINK_ERROR = "This link is no longer valid — please scan the QR code at the station again.";
-const SESSION_EXPIRED_ERROR = "Your session expired — please start again from the QR code.";
 
 export interface PublicStationOption {
   id: string;
@@ -62,62 +98,91 @@ export interface PublicServiceOption {
   queueIsOpen: boolean;
 }
 
+export interface QueueTicket {
+  queueEntryId: string;
+  position: number;
+  status: QueueStatus;
+  rank: number;
+  estimatedWaitMinutes: number;
+}
+
+function ticketFromRow(row: {
+  id: string;
+  position: number;
+  status: QueueStatus;
+  rank: number;
+  estimated_wait_minutes: number;
+}): QueueTicket {
+  return {
+    queueEntryId: row.id,
+    position: row.position,
+    status: row.status,
+    rank: row.rank,
+    estimatedWaitMinutes: row.estimated_wait_minutes,
+  };
+}
+
 /**
- * Creates a brand-new customer account for the public self-service flow and
- * signs this browser into it for real. The throwaway password only ever
- * exists inside this one request — never shown to the customer, never
- * stored — it exists purely so signInWithPassword() below can mint a
- * genuine session; a real login mechanism (OTP) is Phase 7.4's job, not
- * this walk-in convenience path's.
+ * Looks up an already-created customer by phone via the service-role
+ * client (profiles isn't anon-readable, and this needs the real id, unlike
+ * the anon-safe boolean-only customer_phone_registered() RPC the phone-
+ * identify step uses). Internal to this file — the customer_id it resolves
+ * is never sent back to the browser.
  */
-export async function joinAsNewCustomerAction(
+async function resolveOrCreateCustomerId(input: {
+  phone: string;
+  fullName: string | null;
+}): Promise<{ customerId: string } | { error: string }> {
+  const admin = createAdminClient();
+  const { data: existing, error: lookupError } = await admin
+    .from("profiles")
+    .select("id")
+    .eq("phone", input.phone)
+    .eq("role", "CUSTOMER")
+    .is("deleted_at", null)
+    .maybeSingle();
+
+  if (lookupError) {
+    console.error("[resolveOrCreateCustomerId] lookup failed:", lookupError.message);
+    return { error: "Something went wrong — please try again." };
+  }
+
+  if (existing) return { customerId: existing.id };
+
+  if (!input.fullName) {
+    return { error: "This phone number isn't registered yet — enter your name to create an account." };
+  }
+
+  const created = await createCustomerAccount({ fullName: input.fullName, phone: input.phone });
+  if (created.error || !created.customerId) {
+    return { error: created.error ?? "Couldn't create your account — please try again." };
+  }
+  return { customerId: created.customerId };
+}
+
+/**
+ * The phone-first identification step: does an account already exist for
+ * this number? Read-only, anon-safe (customer_phone_registered() returns
+ * only a boolean — see the migration for why). Drives which screen comes
+ * next (a "welcome back" continuation vs. the name-collection form) —
+ * never forces "Create Account" on a returning customer.
+ */
+export async function identifyPhoneAction(
   token: string,
-  input: { fullName: string; phone: string },
-): Promise<{ error?: string }> {
+  phone: string,
+): Promise<{ exists?: boolean; normalizedPhone?: string; error?: string }> {
   if (!tokenMatches(token)) return { error: INVALID_LINK_ERROR };
 
-  const parsed = publicJoinCustomerSchema.safeParse({ full_name: input.fullName, phone: input.phone });
-  if (!parsed.success) {
-    return { error: parsed.error.issues.map((issue) => issue.message).join(" ") || "Check your input and try again." };
-  }
+  const parsed = publicPhoneSchema.safeParse({ phone });
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Enter a valid phone number." };
 
-  const throwawayPassword = randomBytes(32).toString("hex");
-
-  try {
-    const admin = createAdminClient();
-    const { data, error } = await admin.auth.admin.createUser({
-      phone: parsed.data.phone,
-      phone_confirm: true,
-      password: throwawayPassword,
-      user_metadata: { full_name: parsed.data.full_name },
-    });
-
-    if (error || !data.user) {
-      if (/already|exists/i.test(error?.message ?? "")) {
-        return {
-          error:
-            "This phone number already has an account. Please use the Gas Station app to book or join the queue, or ask a staff member for help.",
-        };
-      }
-      return { error: "Couldn't create your account — please ask a staff member for help." };
-    }
-
+  return runKioskAction(async () => {
     const supabase = await createClient();
-    const { error: signInError } = await supabase.auth.signInWithPassword({
-      phone: parsed.data.phone,
-      password: throwawayPassword,
-    });
+    const { data, error } = await supabase.rpc("customer_phone_registered", { p_phone: parsed.data.phone });
 
-    if (signInError) {
-      return { error: "Your account was created, but we couldn't sign you in — please ask a staff member for help." };
-    }
-
-    return {};
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Couldn't create your account.";
-    console.error("[joinAsNewCustomerAction]", message);
-    return { error: "This page isn't available right now — please ask a staff member for help." };
-  }
+    if (error) return { error: error.message };
+    return { exists: data ?? false, normalizedPhone: parsed.data.phone };
+  });
 }
 
 export async function getAvailableSlotsPublicAction(
@@ -128,67 +193,107 @@ export async function getAvailableSlotsPublicAction(
 ): Promise<{ slots: { start: string; end: string }[]; error?: string }> {
   if (!tokenMatches(token)) return { slots: [], error: INVALID_LINK_ERROR };
 
-  const supabase = await createClient();
-  const { data, error } = await supabase.rpc("get_available_slots", {
-    p_station_id: stationId,
-    p_service_id: serviceId,
-    p_date: date,
-  });
+  const result = await runKioskAction(async () => {
+    const supabase = await createClient();
+    const { data, error } = await supabase.rpc("get_available_slots", {
+      p_station_id: stationId,
+      p_service_id: serviceId,
+      p_date: date,
+    });
 
-  if (error) return { slots: [], error: error.message };
-  return { slots: (data ?? []).map((row) => ({ start: row.slot_start, end: row.slot_end })) };
+    if (error) return { slots: [], error: error.message };
+    return { slots: (data ?? []).map((row) => ({ start: row.slot_start, end: row.slot_end })) };
+  });
+  return "slots" in result ? result : { slots: [], error: result.error };
 }
 
-export async function joinQueuePublicAction(
+/**
+ * "Start Now": resolves (or, for a genuinely new phone, creates) the
+ * customer, then joins the walk-in queue via kiosk_join_queue() — never
+ * shows/uses future booking slots.
+ */
+export async function startWalkInAction(
   token: string,
-  input: { stationServiceId: string },
-): Promise<{ error?: string }> {
+  input: { phone: string; fullName: string | null; stationServiceId: string },
+): Promise<{ ticket?: QueueTicket; error?: string }> {
   if (!tokenMatches(token)) return { error: INVALID_LINK_ERROR };
 
-  const parsed = publicJoinQueueSchema.safeParse({ station_service_id: input.stationServiceId });
+  const parsed = publicStartWalkInSchema.safeParse({
+    phone: input.phone,
+    full_name: input.fullName ?? undefined,
+    station_service_id: input.stationServiceId,
+  });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Check your input and try again." };
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { error: SESSION_EXPIRED_ERROR };
+  return runKioskAction(async () => {
+    const resolved = await resolveOrCreateCustomerId({ phone: parsed.data.phone, fullName: parsed.data.full_name });
+    if ("error" in resolved) return { error: resolved.error };
 
-  const { error } = await supabase.rpc("join_queue", {
-    p_customer_id: user.id,
-    p_station_service_id: parsed.data.station_service_id,
+    const admin = createAdminClient();
+    const { data: entry, error: joinError } = await admin.rpc("kiosk_join_queue", {
+      p_customer_id: resolved.customerId,
+      p_station_service_id: parsed.data.station_service_id,
+    });
+
+    if (joinError || !entry) return { error: joinError?.message ?? "Couldn't join the queue — please try again." };
+
+    const { data: status, error: statusError } = await admin.rpc("kiosk_queue_status", { p_queue_entry_id: entry.id });
+    const row = status?.[0];
+    if (statusError || !row) {
+      return { error: statusError?.message ?? "Joined the queue, but couldn't load your ticket — please ask a staff member for your position." };
+    }
+
+    return { ticket: ticketFromRow(row) };
   });
-
-  if (error) return { error: error.message };
-  return {};
 }
 
-export async function bookSlotPublicAction(
+export async function getQueueStatusAction(token: string, queueEntryId: string): Promise<{ ticket?: QueueTicket; error?: string }> {
+  if (!tokenMatches(token)) return { error: INVALID_LINK_ERROR };
+
+  return runKioskAction(async () => {
+    const admin = createAdminClient();
+    const { data: status, error } = await admin.rpc("kiosk_queue_status", { p_queue_entry_id: queueEntryId });
+    const row = status?.[0];
+    if (error || !row) return { error: error?.message ?? "Couldn't load your ticket status." };
+
+    return { ticket: ticketFromRow(row) };
+  });
+}
+
+/**
+ * "Book for Later": resolves/creates the customer the same way as
+ * startWalkInAction, then creates a real booking for the explicitly chosen
+ * slot via kiosk_create_booking() — the existing availability engine
+ * (get_available_slots) and booking-conflict logic, not a second copy.
+ */
+export async function bookSlotAction(
   token: string,
-  input: { stationId: string; serviceId: string; startAt: string },
+  input: { phone: string; fullName: string | null; stationId: string; serviceId: string; startAt: string },
 ): Promise<{ bookingId?: string; error?: string }> {
   if (!tokenMatches(token)) return { error: INVALID_LINK_ERROR };
 
   const parsed = publicBookSlotSchema.safeParse({
+    phone: input.phone,
+    full_name: input.fullName ?? undefined,
     station_id: input.stationId,
     service_id: input.serviceId,
     start_at: input.startAt,
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Check your input and try again." };
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { error: SESSION_EXPIRED_ERROR };
+  return runKioskAction(async () => {
+    const resolved = await resolveOrCreateCustomerId({ phone: parsed.data.phone, fullName: parsed.data.full_name });
+    if ("error" in resolved) return { error: resolved.error };
 
-  const { data, error } = await supabase.rpc("create_booking", {
-    p_customer_id: user.id,
-    p_station_id: parsed.data.station_id,
-    p_service_id: parsed.data.service_id,
-    p_start_at: parsed.data.start_at,
+    const admin = createAdminClient();
+    const { data, error } = await admin.rpc("kiosk_create_booking", {
+      p_customer_id: resolved.customerId,
+      p_station_id: parsed.data.station_id,
+      p_service_id: parsed.data.service_id,
+      p_start_at: parsed.data.start_at,
+    });
+
+    if (error || !data) return { error: error?.message ?? "Couldn't create the booking — please try again." };
+    return { bookingId: data.id };
   });
-
-  if (error) return { error: error.message };
-  return { bookingId: data?.id };
 }
