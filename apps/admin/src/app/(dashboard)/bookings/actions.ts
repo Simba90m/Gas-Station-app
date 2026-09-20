@@ -117,25 +117,48 @@ export async function createCustomerAction(input: {
   if (!admin) return { error: "You don't have permission to create a customer." };
 
   const parsed = createCustomerSchema.safeParse({ full_name: input.fullName, phone: input.phone });
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Check your input and try again." };
-
-  const supabaseAdmin = createAdminClient();
-  const { data, error } = await supabaseAdmin.auth.admin.createUser({
-    phone: parsed.data.phone,
-    phone_confirm: true,
-    user_metadata: { full_name: parsed.data.full_name },
-  });
-
-  if (error || !data.user) {
-    if (/already|exists/i.test(error?.message ?? "")) {
-      return { error: "A customer with this phone number already exists — try searching instead." };
-    }
-    return { error: error?.message || "Couldn't create the customer account." };
+  if (!parsed.success) {
+    return { error: parsed.error.issues.map((issue) => issue.message).join(" ") || "Check your input and try again." };
   }
 
-  return {
-    customer: { id: data.user.id, fullName: parsed.data.full_name, phone: parsed.data.phone },
-  };
+  // createAdminClient() reads SUPABASE_SERVICE_ROLE_KEY and throws if it's
+  // missing — that's the right behavior for a genuinely misconfigured
+  // server, but it must never escape this action as an uncaught exception:
+  // an uncaught Server Action error propagates to the nearest error
+  // boundary, which is scoped to the whole /bookings/new route segment —
+  // it would replace the entire page with an error screen, which is
+  // exactly what looked like "the page requires this env var to render"
+  // even though nothing on the page itself ever touches this client. This
+  // try/catch is what actually confines a missing-config failure to a
+  // normal, localized submitError in the wizard, only at the moment
+  // "Create customer" is actually clicked.
+  try {
+    const supabaseAdmin = createAdminClient();
+    const { data, error } = await supabaseAdmin.auth.admin.createUser({
+      phone: parsed.data.phone,
+      phone_confirm: true,
+      user_metadata: { full_name: parsed.data.full_name },
+    });
+
+    if (error || !data.user) {
+      if (/already|exists/i.test(error?.message ?? "")) {
+        return { error: "A customer with this phone number already exists — try searching instead." };
+      }
+      return { error: error?.message || "Couldn't create the customer account." };
+    }
+
+    return {
+      customer: { id: data.user.id, fullName: parsed.data.full_name, phone: parsed.data.phone },
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Couldn't create the customer account.";
+    console.error("[createCustomerAction]", message);
+    return {
+      error: message.includes("SUPABASE_SERVICE_ROLE_KEY")
+        ? "Customer creation isn't configured on this server yet — ask an owner/manager to set SUPABASE_SERVICE_ROLE_KEY."
+        : message,
+    };
+  }
 }
 
 export interface AvailableSlot {
@@ -176,6 +199,12 @@ export async function createManualBookingAction(input: {
   employeeId: string | null;
   notes: string | null;
 }): Promise<{ bookingId?: string; error?: string }> {
+  // Diagnostic: the wizard already guards against calling this without a
+  // selected customer/slot, so if customerId ever arrives empty here, this
+  // line (not the client-side guard) is the authoritative place to see it —
+  // logs server-side, never sent to the browser.
+  console.error("[createManualBookingAction] received input:", input);
+
   const parsed = createManualBookingSchema.safeParse({
     customer_id: input.customerId,
     station_id: input.stationId,
@@ -184,7 +213,14 @@ export async function createManualBookingAction(input: {
     employee_id: input.employeeId,
     notes: input.notes ?? undefined,
   });
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Check your input and try again." };
+  if (!parsed.success) {
+    // All issues, not just the first — customer_id is declared first in the
+    // schema, so if multiple fields were ever invalid at once, showing only
+    // issues[0] would always blame the customer even when it's not the
+    // actual (or only) problem.
+    console.error("[createManualBookingAction] validation failed:", parsed.error.issues);
+    return { error: parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join(" ") };
+  }
 
   const supabase = await createClient();
   // create_booking() re-checks authorization and availability itself

@@ -134,15 +134,19 @@ export function BookingWizard({
       return;
     }
     setSubmitError(undefined);
+    const payload = {
+      customerId: selectedCustomer.id,
+      stationId,
+      serviceId,
+      startAt: selectedSlot.start,
+      employeeId: employeeId || null,
+      notes: notes || null,
+    };
+    // Diagnostic: logs in the browser console exactly what's about to be
+    // sent, straight from the same selectedCustomer Review/canConfirm read.
+    console.error("[booking-wizard] confirm payload:", payload);
     startTransition(async () => {
-      const result = await createManualBookingAction({
-        customerId: selectedCustomer.id,
-        stationId,
-        serviceId,
-        startAt: selectedSlot.start,
-        employeeId: employeeId || null,
-        notes: notes || null,
-      });
+      const result = await createManualBookingAction(payload);
       if (result.error) {
         setSubmitError(result.error);
         return;
