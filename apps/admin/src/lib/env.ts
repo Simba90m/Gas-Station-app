@@ -22,4 +22,10 @@ export const env = {
   // dashboard now calls it and what the project's env vars provide.
   supabasePublishableKey: () =>
     requireEnv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY),
+  // Deliberately NOT prefixed with NEXT_PUBLIC_ — Next.js only inlines
+  // NEXT_PUBLIC_* vars into the browser bundle, so this one is only ever
+  // readable from server-side code (Server Actions, Route Handlers). Used
+  // solely by lib/supabase/admin.ts, which is itself only ever imported
+  // from "use server" files — see that file for why this is safe.
+  supabaseServiceRoleKey: () => requireEnv("SUPABASE_SERVICE_ROLE_KEY", process.env.SUPABASE_SERVICE_ROLE_KEY),
 };

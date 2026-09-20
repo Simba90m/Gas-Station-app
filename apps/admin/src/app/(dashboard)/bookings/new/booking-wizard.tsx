@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  createCustomerAction,
   createManualBookingAction,
   getAvailableSlotsAction,
   searchCustomersAction,
@@ -47,11 +48,21 @@ export function BookingWizard({
 }) {
   const router = useRouter();
 
-  // Step 1: customer.
+  // Step 1: customer. selectedCustomer is the SINGLE source of truth for
+  // who this booking is for — the "Selected" summary, the Review section,
+  // and handleConfirm's payload all read this same value, never a separate
+  // display-only copy. It's only ever set to a real object, and only ever
+  // from a response that already carries a real, server-issued UUID
+  // (a search result row, or createCustomerAction's returned customer) —
+  // never optimistically before that id exists.
   const [customerQuery, setCustomerQuery] = useState("");
   const [customerResults, setCustomerResults] = useState<CustomerSearchResult[]>([]);
   const [customerSearchError, setCustomerSearchError] = useState<string | undefined>();
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerSearchResult | null>(null);
+  const [showCreateCustomer, setShowCreateCustomer] = useState(false);
+  const [newCustomerName, setNewCustomerName] = useState("");
+  const [newCustomerPhone, setNewCustomerPhone] = useState("");
+  const [createCustomerError, setCreateCustomerError] = useState<string | undefined>();
 
   // Steps 2-4: station / service / date.
   const [stationId, setStationId] = useState("");
@@ -80,6 +91,24 @@ export function BookingWizard({
     });
   }
 
+  function handleCreateCustomer() {
+    setCreateCustomerError(undefined);
+    startTransition(async () => {
+      const result = await createCustomerAction({ fullName: newCustomerName, phone: newCustomerPhone });
+      if (result.error || !result.customer) {
+        setCreateCustomerError(result.error ?? "Couldn't create the customer.");
+        return;
+      }
+      // Select immediately from the response's real id — never before this
+      // point, so there's no window where a name is shown without a real,
+      // usable customer UUID behind it.
+      setSelectedCustomer(result.customer);
+      setShowCreateCustomer(false);
+      setNewCustomerName("");
+      setNewCustomerPhone("");
+    });
+  }
+
   function handleFindSlots() {
     setSlotsError(undefined);
     setSlots(null);
@@ -93,7 +122,17 @@ export function BookingWizard({
   }
 
   function handleConfirm() {
-    if (!selectedCustomer || !selectedSlot) return;
+    // Belt-and-suspenders: the Confirm button is already disabled unless
+    // canConfirm is true, but this makes any future regression visible
+    // (a clear message) instead of a silent no-op.
+    if (!selectedCustomer) {
+      setSubmitError("Choose or create a customer first.");
+      return;
+    }
+    if (!selectedSlot) {
+      setSubmitError("Choose an available time first.");
+      return;
+    }
     setSubmitError(undefined);
     startTransition(async () => {
       const result = await createManualBookingAction({
@@ -140,6 +179,16 @@ export function BookingWizard({
               <Button variant="secondary" onClick={handleSearchCustomer} disabled={isPending}>
                 Search
               </Button>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setShowCreateCustomer((v) => !v);
+                  setCreateCustomerError(undefined);
+                }}
+                disabled={isPending}
+              >
+                Create customer
+              </Button>
             </div>
             {customerSearchError && <p className="mt-2 text-sm text-red-700">{customerSearchError}</p>}
             {customerResults.length > 0 && (
@@ -160,6 +209,38 @@ export function BookingWizard({
                 ))}
               </ul>
             )}
+
+            {showCreateCustomer && (
+              <div className="mt-3 space-y-3 rounded-md border border-slate-200 bg-slate-50 p-4">
+                <p className="text-sm text-slate-500">For a walk-in with no existing account yet.</p>
+                <div>
+                  <Label htmlFor="new_customer_name">Full name</Label>
+                  <Input
+                    id="new_customer_name"
+                    value={newCustomerName}
+                    onChange={(e) => setNewCustomerName(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="new_customer_phone">Phone</Label>
+                  <Input
+                    id="new_customer_phone"
+                    placeholder="+201012345678"
+                    value={newCustomerPhone}
+                    onChange={(e) => setNewCustomerPhone(e.target.value)}
+                  />
+                </div>
+                {createCustomerError && <p className="text-sm text-red-700">{createCustomerError}</p>}
+                <div className="flex gap-2">
+                  <Button onClick={handleCreateCustomer} disabled={isPending}>
+                    {isPending ? "Creating..." : "Create and select"}
+                  </Button>
+                  <Button variant="ghost" onClick={() => setShowCreateCustomer(false)} disabled={isPending}>
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -170,10 +251,13 @@ export function BookingWizard({
           <select
             id="station"
             value={stationId}
+            required
             onChange={(e) => {
               setStationId(e.target.value);
               setServiceId("");
               setSlots(null);
+              setSelectedSlot(null);
+              setEmployeeId("");
             }}
             className="block w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
           >
@@ -190,9 +274,12 @@ export function BookingWizard({
           <select
             id="service"
             value={serviceId}
+            required
             onChange={(e) => {
               setServiceId(e.target.value);
               setSlots(null);
+              setSelectedSlot(null);
+              setEmployeeId("");
             }}
             disabled={!stationId}
             className="block w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500 disabled:bg-slate-100"
@@ -217,6 +304,8 @@ export function BookingWizard({
             onChange={(e) => {
               setDate(e.target.value);
               setSlots(null);
+              setSelectedSlot(null);
+              setEmployeeId("");
             }}
             className="max-w-xs"
           />

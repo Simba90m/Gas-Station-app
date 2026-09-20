@@ -3,6 +3,11 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  /* Tells the browser this app only has a light theme, so it doesn't apply
+     its own dark-mode skin to native form controls (select/input) based on
+     OS preference — see the removed dark-mode block below for why that
+     mattered. */
+  color-scheme: light;
 }
 
 @theme inline {
@@ -12,15 +17,42 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/*
+ * Root cause of "selected values look gray/disabled everywhere": this file
+ * was still the unmodified Next.js scaffold, including a
+ * `prefers-color-scheme: dark` block this dashboard never designed a dark
+ * theme for. Under a dark OS/browser preference, any element without its
+ * own explicit Tailwind text-color class (most notably native <select>,
+ * which browsers can additionally skin based on `color-scheme`) rendered
+ * with a washed-out light color instead of normal dark text — regardless
+ * of whether a real value was selected. Removed above; the rules below
+ * make the actual placeholder/selected distinction explicit instead of
+ * relying on whatever color happened to be inherited.
+ *
+ * `select { color: ... }` — a plain value is always normal, readable dark
+ * text (matches "existing configured data must be normal/readable" for
+ * selects like the resource-status or hours-mode pickers, which are always
+ * a real value and never show a placeholder).
+ *
+ * `select:required:invalid { color: ... }` — every "choose a real option"
+ * select in this app already follows the same existing convention
+ * (`required` + an empty-value `<option value="" disabled>Choose…`), which
+ * makes it natively HTML-invalid exactly while that placeholder is still
+ * selected — so this rule needs no JavaScript and applies uniformly the
+ * moment a select gains `required`, without editing each screen. Filter
+ * selects (e.g. "All stations") are deliberately never `required`, since
+ * their empty value is a real, standing choice, not an unfinished one —
+ * they correctly stay normal-colored throughout.
+ */
+select {
+  color: #0f172a; /* slate-900 */
+}
+select:required:invalid {
+  color: #94a3b8; /* slate-400 — matches Input's placeholder color */
 }

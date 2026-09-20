@@ -2,8 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import type { BookingStatus } from "@gas-station/types";
+import { getCurrentAdminUser } from "@/lib/current-user";
 import { createClient } from "@/lib/supabase/server";
-import { cancelBookingSchema, createManualBookingSchema } from "./schema";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { cancelBookingSchema, createCustomerSchema, createManualBookingSchema } from "./schema";
 
 export async function updateBookingStatusAction(bookingId: string, status: BookingStatus): Promise<{ error?: string }> {
   const supabase = await createClient();
@@ -84,6 +86,56 @@ export async function searchCustomersAction(query: string): Promise<{ results: C
     merged.set(row.id, { id: row.id, fullName: row.full_name, phone: row.phone });
   }
   return { results: Array.from(merged.values()) };
+}
+
+/**
+ * Creates a real auth.users account for a walk-in customer, then hands
+ * back its id — the one operation in this app a plain `authenticated`
+ * session structurally cannot do (auth.users is never writable directly;
+ * see supabase/migrations/20240101000070_auth_handlers.sql). Unlike every
+ * other privileged operation in this schema, there's no SECURITY DEFINER
+ * Postgres function that can do this instead, because it isn't a table
+ * write at all — it's a call to Supabase's Auth Admin API, which only the
+ * service role key can make. That's why this is the one place this app
+ * uses lib/supabase/admin.ts.
+ *
+ * Security: the service role client itself has no notion of who's
+ * calling, so this function does its own authorization check first
+ * (mirrors how create_booking() reimplements bookings_insert's RLS check
+ * for the same reason: the privileged mechanism bypasses the normal
+ * boundary, so the check has to happen explicitly here instead). No RLS
+ * policy changes, no new table grants — handle_new_user() (already
+ * SECURITY DEFINER, unchanged) creates the matching profiles/customers
+ * rows exactly as it does for every other real signup, in the same
+ * transaction as the auth.users insert.
+ */
+export async function createCustomerAction(input: {
+  fullName: string;
+  phone: string;
+}): Promise<{ customer?: CustomerSearchResult; error?: string }> {
+  const admin = await getCurrentAdminUser();
+  if (!admin) return { error: "You don't have permission to create a customer." };
+
+  const parsed = createCustomerSchema.safeParse({ full_name: input.fullName, phone: input.phone });
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Check your input and try again." };
+
+  const supabaseAdmin = createAdminClient();
+  const { data, error } = await supabaseAdmin.auth.admin.createUser({
+    phone: parsed.data.phone,
+    phone_confirm: true,
+    user_metadata: { full_name: parsed.data.full_name },
+  });
+
+  if (error || !data.user) {
+    if (/already|exists/i.test(error?.message ?? "")) {
+      return { error: "A customer with this phone number already exists — try searching instead." };
+    }
+    return { error: error?.message || "Couldn't create the customer account." };
+  }
+
+  return {
+    customer: { id: data.user.id, fullName: parsed.data.full_name, phone: parsed.data.phone },
+  };
 }
 
 export interface AvailableSlot {
