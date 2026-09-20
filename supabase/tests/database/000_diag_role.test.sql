@@ -10,8 +10,14 @@
 BEGIN;
 SELECT plan(1);
 
+-- NOTE: a first version of this file also checked
+-- has_table_privilege(current_user, 'auth.users', 'INSERT') — that itself
+-- failed with "permission denied for schema auth", because casting a
+-- schema-qualified name like 'auth.users' to regclass requires USAGE on
+-- that schema just to resolve it. Removed here, but that failure is
+-- itself confirmed evidence: this role has no USAGE on `auth` at all.
 SELECT diag(format(
-  E'current_user=%s\nsession_user=%s\nis_superuser=%s\nrolbypassrls=%s\nstations_owner=%s\ncan_select_stations=%s\ncan_insert_stations=%s\nhas_usage_auth=%s\ncan_insert_auth_users=%s\nmember_of=%s',
+  E'current_user=%s\nsession_user=%s\nis_superuser=%s\nrolbypassrls=%s\nstations_owner=%s\ncan_select_stations=%s\ncan_insert_stations=%s\nhas_usage_auth=%s\nmember_of=%s',
   current_user,
   session_user,
   (SELECT rolsuper FROM pg_roles WHERE rolname = current_user)::text,
@@ -20,7 +26,6 @@ SELECT diag(format(
   has_table_privilege(current_user, 'public.stations', 'SELECT')::text,
   has_table_privilege(current_user, 'public.stations', 'INSERT')::text,
   has_schema_privilege(current_user, 'auth', 'USAGE')::text,
-  has_table_privilege(current_user, 'auth.users', 'INSERT')::text,
   (SELECT COALESCE(string_agg(r.rolname, ', '), '(none)')
      FROM pg_auth_members m
      JOIN pg_roles r ON r.oid = m.roleid
