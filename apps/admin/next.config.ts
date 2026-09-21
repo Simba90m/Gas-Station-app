@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { NextConfig } from "next";
 import { env } from "./src/lib/env";
 
@@ -37,6 +38,19 @@ const nextConfig: NextConfig = {
   // Don't auto-write AGENTS.md/CLAUDE.md into apps/admin on every dev/build run.
   agentRules: false,
   allowedDevOrigins: allowedDevOrigins(),
+  turbopack: {
+    // Turbopack auto-detects the workspace root by walking up for a
+    // lockfile, but its own docs warn this can miss dependencies of a
+    // *linked* workspace package (e.g. packages/utils, pulled into this
+    // app via transpilePackages) that only exist in the monorepo root's
+    // node_modules under this repo's hoisted pnpm layout (see .npmrc) —
+    // observed on Windows as "Module not found: Can't resolve
+    // 'libphonenumber-js'" even though it's correctly declared as a
+    // dependency of both packages/utils and this app. Setting the root
+    // explicitly (two levels up: apps/admin -> monorepo root) removes the
+    // auto-detection guesswork entirely.
+    root: path.join(__dirname, "../.."),
+  },
 };
 
 export default nextConfig;
