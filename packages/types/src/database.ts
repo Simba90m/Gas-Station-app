@@ -46,6 +46,15 @@ export type DiscountType = "PERCENTAGE" | "FIXED_AMOUNT";
 
 export type ResourceStatus = "AVAILABLE" | "MAINTENANCE" | "INACTIVE";
 
+// BOOKABLE: appears in the booking/queue journey (get_available_slots() /
+// create_booking() / join_queue() all require this). INFO: station/business
+// information (e.g. Fuel) — never bookable. CONTENT: customer-facing content
+// with a price (e.g. a café menu item) — has its own station availability/
+// price like any other catalog row, but is never bookable. Owner-editable
+// per row, not a hardcoded rule about any particular service — see
+// supabase/migrations/20240101000300_service_category.sql.
+export type ServiceCategory = "BOOKABLE" | "INFO" | "CONTENT";
+
 export interface Database {
   public: {
     Tables: {
@@ -169,11 +178,19 @@ export interface Database {
           description_ar: string | null;
           image_url: string | null;
           base_price: number;
-          duration_minutes: number;
+          // Nullable as of supabase/migrations/20240101000300_service_category.sql
+          // — only means something for a BOOKABLE row (how long the
+          // appointment/queue turn takes); a CONTENT/INFO row has no
+          // duration. A BOOKABLE row is still guaranteed one by a CHECK
+          // constraint, not by this type.
+          duration_minutes: number | null;
           requires_employee_selection: boolean;
           requires_resource: boolean;
           is_active: boolean;
           parent_service_id: string | null;
+          // See ServiceCategory. Defaults to 'BOOKABLE' — see
+          // supabase/migrations/20240101000300_service_category.sql.
+          category: ServiceCategory;
           created_at: string;
           updated_at: string;
           deleted_at: string | null;
@@ -186,11 +203,12 @@ export interface Database {
           description_ar?: string | null;
           image_url?: string | null;
           base_price: number;
-          duration_minutes: number;
+          duration_minutes?: number | null;
           requires_employee_selection?: boolean;
           requires_resource?: boolean;
           is_active?: boolean;
           parent_service_id?: string | null;
+          category?: ServiceCategory;
         };
         Update: Partial<Database["public"]["Tables"]["services"]["Insert"]>;
         Relationships: [];
@@ -327,6 +345,48 @@ export interface Database {
           break_ends_at?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["employee_working_hours"]["Insert"]>;
+        Relationships: [];
+      };
+      // WHICH station an employee works at, on WHICH day, during WHAT time
+      // window — what availability actually reads now (see
+      // available_employees_for_slot() /
+      // supabase/migrations/20240101000320_employee_availability_station_schedule.sql).
+      // employee_working_hours above is preserved but no longer consulted
+      // by the booking engine — station assignment/hours are not a
+      // permanent 1:1 relationship; an employee can have several rows
+      // across stations/days. A row's station_id must already be one the
+      // employee is assigned to (employee_station_assignments), and no two
+      // rows for the same employee+day may have overlapping time windows
+      // across different stations — both enforced by triggers, not by this
+      // type. See supabase/migrations/20240101000310_employee_station_schedule.sql.
+      employee_station_schedule: {
+        Row: {
+          id: string;
+          employee_id: string;
+          station_id: string;
+          day_of_week: number;
+          is_closed: boolean;
+          is_24_hours: boolean;
+          starts_at: string | null;
+          ends_at: string | null;
+          break_starts_at: string | null;
+          break_ends_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          employee_id: string;
+          station_id: string;
+          day_of_week: number;
+          is_closed?: boolean;
+          is_24_hours?: boolean;
+          starts_at?: string | null;
+          ends_at?: string | null;
+          break_starts_at?: string | null;
+          break_ends_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["employee_station_schedule"]["Insert"]>;
         Relationships: [];
       };
       // No status column — "active" means ended_at IS NULL (see the

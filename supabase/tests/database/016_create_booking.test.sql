@@ -62,8 +62,8 @@ INSERT INTO public.employee_station_assignments (profile_id, station_id)
 VALUES ('a0000000-0000-0000-0000-000000001651', 'a0000000-0000-0000-0000-000000001610');
 INSERT INTO public.employee_service_capabilities (employee_id, service_id)
 VALUES ('a0000000-0000-0000-0000-000000001651', 'a0000000-0000-0000-0000-000000001622');
-INSERT INTO public.employee_working_hours (employee_id, day_of_week, starts_at, ends_at)
-VALUES ('a0000000-0000-0000-0000-000000001651', 1, '06:00', '22:00');
+INSERT INTO public.employee_station_schedule (employee_id, station_id, day_of_week, starts_at, ends_at)
+VALUES ('a0000000-0000-0000-0000-000000001651', 'a0000000-0000-0000-0000-000000001610', 1, '06:00', '22:00');
 
 INSERT INTO auth.users (id, email) VALUES ('a0000000-0000-0000-0000-000000001661', 'create-booking-customer1@example.com');
 INSERT INTO auth.users (id, email) VALUES ('a0000000-0000-0000-0000-000000001662', 'create-booking-customer2@example.com');

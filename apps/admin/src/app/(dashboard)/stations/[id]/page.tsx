@@ -17,7 +17,11 @@ export default async function StationDetailPage({ params }: { params: Promise<{ 
       supabase.from("stations").select("*").eq("id", id).single(),
       supabase.from("station_operating_hours").select("*").eq("station_id", id),
       supabase.from("station_services").select("id, service_id, price_override, is_active").eq("station_id", id),
-      supabase.from("services").select("id, name_en, base_price, duration_minutes").eq("is_active", true).is("deleted_at", null),
+      supabase
+        .from("services")
+        .select("id, name_en, base_price, duration_minutes, category")
+        .eq("is_active", true)
+        .is("deleted_at", null),
     ]);
 
   if (stationError || !station) {
@@ -40,6 +44,7 @@ export default async function StationDetailPage({ params }: { params: Promise<{ 
         basePrice: service.base_price,
         priceOverride: ss.price_override,
         durationMinutes: service.duration_minutes,
+        category: service.category,
         isActive: ss.is_active,
       },
     ];

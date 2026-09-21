@@ -7,6 +7,7 @@ import { HoursEditor } from "../../../hours-editor";
 import { upsertServiceHoursAction } from "../actions";
 import { PriceForm } from "./price-form";
 import { ResourcesPanel } from "./resources-panel";
+import { CategoryForm } from "./category-form";
 
 export default async function StationServiceDetailPage({
   params,
@@ -34,7 +35,7 @@ export default async function StationServiceDetailPage({
     supabase.from("stations").select("name_en").eq("id", stationId).single(),
     supabase
       .from("services")
-      .select("name_en, base_price, duration_minutes, requires_resource")
+      .select("name_en, base_price, duration_minutes, requires_resource, category")
       .eq("id", stationService.service_id)
       .single(),
     supabase.from("service_operating_hours").select("*").eq("station_service_id", stationServiceId),
@@ -56,10 +57,31 @@ export default async function StationServiceDetailPage({
       </div>
 
       <Card>
+        <h2 className="text-sm font-semibold text-slate-900">Service type</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          Whether customers can book or queue for this, or it&apos;s station info (e.g. Fuel) or café &amp; content
+          (e.g. a menu item) instead. Changing this affects every station that offers this service, not just this
+          one.
+        </p>
+        <div className="mt-4">
+          <CategoryForm
+            stationId={stationId}
+            stationServiceId={stationServiceId}
+            serviceId={stationService.service_id}
+            category={service?.category ?? "BOOKABLE"}
+          />
+        </div>
+      </Card>
+
+      <Card>
         <h2 className="text-sm font-semibold text-slate-900">Configuration</h2>
         <p className="mt-1 text-sm text-slate-500">
-          Duration is set by the catalog service ({service?.duration_minutes ?? "—"} min) — only price can be
-          overridden per station. Leave the price blank to use the catalog price ({service?.base_price ?? "—"} EGP).
+          Duration is set by the catalog service (
+          {service?.duration_minutes !== null && service?.duration_minutes !== undefined
+            ? `${service.duration_minutes} min`
+            : "no duration — not a bookable service"}
+          ) — only price can be overridden per station. Leave the price blank to use the catalog price (
+          {service?.base_price ?? "—"} EGP).
         </p>
         <div className="mt-4">
           <PriceForm

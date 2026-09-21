@@ -2,12 +2,11 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { HoursEditor } from "../../stations/hours-editor";
-import { upsertEmployeeHoursAction } from "../actions";
 import { EmployeeForm } from "./employee-form";
 import { ActivateToggle } from "./activate-toggle";
 import { StationAssignmentsPanel } from "./station-assignments-panel";
 import { CapabilitiesPanel } from "./capabilities-panel";
+import { StationSchedulePanel } from "./station-schedule-panel";
 import { ShiftsPanel } from "./shifts-panel";
 
 export default async function EmployeeDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -31,14 +30,24 @@ export default async function EmployeeDetailPage({ params }: { params: Promise<{
     { data: stations },
     { data: capabilities },
     { data: services },
-    { data: hours },
+    { data: schedule },
     { data: shifts },
   ] = await Promise.all([
     supabase.from("employee_station_assignments").select("id, station_id, is_primary").eq("profile_id", id),
     supabase.from("stations").select("id, name_en").is("deleted_at", null).order("name_en"),
     supabase.from("employee_service_capabilities").select("id, service_id").eq("employee_id", id),
-    supabase.from("services").select("id, name_en").eq("is_active", true).is("deleted_at", null).order("name_en"),
-    supabase.from("employee_working_hours").select("*").eq("employee_id", id),
+    // Only bookable services need a capability — Fuel/café content never
+    // go through the booking/queue journey, so an employee "performing"
+    // them isn't a meaningful concept. See
+    // supabase/migrations/20240101000300_service_category.sql.
+    supabase
+      .from("services")
+      .select("id, name_en")
+      .eq("is_active", true)
+      .eq("category", "BOOKABLE")
+      .is("deleted_at", null)
+      .order("name_en"),
+    supabase.from("employee_station_schedule").select("*").eq("employee_id", id),
     supabase.from("shifts").select("id, station_id, started_at, ended_at").eq("employee_id", id).order("started_at", { ascending: false }),
   ]);
 
@@ -64,6 +73,27 @@ export default async function EmployeeDetailPage({ params }: { params: Promise<{
   const availableServices = (services ?? [])
     .filter((s) => !capableServiceIds.has(s.id))
     .map((s) => ({ id: s.id, nameEn: s.name_en }));
+
+  // The add-schedule form only offers stations this employee is already
+  // assigned to — a schedule row for any other station is rejected by
+  // check_schedule_station_assignment() anyway (see
+  // supabase/migrations/20240101000310_employee_station_schedule.sql), so
+  // this keeps the owner from picking a choice that would just bounce.
+  const assignedStationOptions = assignmentRows.map((a) => ({ id: a.stationId, nameEn: a.stationName }));
+  const scheduleRows = (schedule ?? []).flatMap((row) => {
+    const stationName = stationNameById.get(row.station_id);
+    if (!stationName) return [];
+    return [
+      {
+        scheduleId: row.id,
+        stationId: row.station_id,
+        stationName,
+        dayOfWeek: row.day_of_week,
+        startsAt: row.starts_at ?? "00:00:00",
+        endsAt: row.ends_at ?? "00:00:00",
+      },
+    ];
+  });
 
   const shiftRows = (shifts ?? []).flatMap((shift) => {
     const stationName = stationNameById.get(shift.station_id);
@@ -121,27 +151,15 @@ export default async function EmployeeDetailPage({ params }: { params: Promise<{
       </Card>
 
       <Card>
-        <h2 className="text-sm font-semibold text-slate-900">Working hours</h2>
+        <h2 className="text-sm font-semibold text-slate-900">Station schedule</h2>
         <p className="mt-1 text-sm text-slate-500">
-          When this employee is normally available. Requires at least one station assignment above first.
+          Where and when this employee actually works — not a permanent station, just whichever days/times they&apos;re
+          scheduled. An employee can work different stations on different days, or even split one day between two
+          stations (e.g. Station 1 mornings, Station 2 afternoons). Requires at least one station assignment above
+          first.
         </p>
         <div className="mt-4">
-          {assignmentRows.length === 0 ? (
-            <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
-              Assign this employee to a station first — working hours can&apos;t be saved until they are.
-            </p>
-          ) : (
-            <HoursEditor
-              initialRows={(hours ?? []).map((h) => ({
-                day_of_week: h.day_of_week,
-                is_closed: h.is_closed,
-                is_24_hours: h.is_24_hours,
-                opens_at: h.starts_at,
-                closes_at: h.ends_at,
-              }))}
-              onSave={upsertEmployeeHoursAction.bind(null, employee.id)}
-            />
-          )}
+          <StationSchedulePanel employeeId={employee.id} schedule={scheduleRows} stations={assignedStationOptions} />
         </div>
       </Card>
 

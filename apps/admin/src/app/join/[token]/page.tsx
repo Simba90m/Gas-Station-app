@@ -39,7 +39,16 @@ export default async function JoinPage({ params }: { params: Promise<{ token: st
 
   const [{ data: stations }, { data: services }, { data: stationServices }, { data: queues }] = await Promise.all([
     supabase.from("stations").select("id, name_en").is("deleted_at", null).order("name_en"),
-    supabase.from("services").select("id, name_en, parent_service_id").eq("is_active", true).is("deleted_at", null),
+    // category = 'BOOKABLE' — this public kiosk/QR flow is the same
+    // booking/queue journey as the mobile app's picker, so Fuel/café
+    // content is excluded here too. See
+    // supabase/migrations/20240101000300_service_category.sql.
+    supabase
+      .from("services")
+      .select("id, name_en, parent_service_id")
+      .eq("is_active", true)
+      .eq("category", "BOOKABLE")
+      .is("deleted_at", null),
     supabase.from("station_services").select("id, station_id, service_id").eq("is_active", true),
     supabase.from("queues").select("station_service_id, is_open").eq("is_open", true),
   ]);

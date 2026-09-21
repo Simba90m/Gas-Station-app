@@ -2,6 +2,7 @@
 
 import { useActionState, useState, useTransition } from "react";
 import Link from "next/link";
+import type { ServiceCategory } from "@gas-station/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,9 +14,23 @@ export interface EnabledServiceRow {
   nameEn: string;
   basePrice: number;
   priceOverride: number | null;
-  durationMinutes: number;
+  durationMinutes: number | null;
+  category: ServiceCategory;
   isActive: boolean;
 }
+
+// Owner-facing labels — no "BOOKABLE/INFO/CONTENT" developer terminology
+// anywhere in the UI. See supabase/migrations/20240101000300_service_category.sql.
+const CATEGORY_LABELS: Record<ServiceCategory, string> = {
+  BOOKABLE: "Bookable service",
+  INFO: "Station info",
+  CONTENT: "Café & content",
+};
+const CATEGORY_TONES: Record<ServiceCategory, "green" | "gray" | "amber"> = {
+  BOOKABLE: "green",
+  INFO: "gray",
+  CONTENT: "amber",
+};
 
 export interface AvailableService {
   id: string;
@@ -70,6 +85,21 @@ function CreateServiceForm({ stationId }: { stationId: string }) {
     <form action={formAction} className="mt-4 space-y-4 rounded-md border border-slate-200 bg-slate-50 p-4">
       <input type="hidden" name="station_id" value={stationId} />
 
+      <div>
+        <Label htmlFor="new_category">Service type</Label>
+        <select
+          id="new_category"
+          name="category"
+          defaultValue="BOOKABLE"
+          required
+          className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+        >
+          <option value="BOOKABLE">Bookable service (customers can book or queue for this)</option>
+          <option value="INFO">Station info (not bookable, e.g. Fuel)</option>
+          <option value="CONTENT">Café &amp; content (menu item, promotion — not bookable)</option>
+        </select>
+      </div>
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
           <Label htmlFor="new_name_en">Name (English)</Label>
@@ -85,7 +115,8 @@ function CreateServiceForm({ stationId }: { stationId: string }) {
         </div>
         <div>
           <Label htmlFor="new_duration_minutes">Duration (minutes)</Label>
-          <Input id="new_duration_minutes" name="duration_minutes" type="number" step="1" min={1} required />
+          <Input id="new_duration_minutes" name="duration_minutes" type="number" step="1" min={1} />
+          <p className="mt-1 text-xs text-slate-400">Only needed for a bookable service.</p>
         </div>
       </div>
 
@@ -147,6 +178,7 @@ export function ServicesPanel({
           <thead className="border-b border-slate-200 bg-slate-50 text-slate-500">
             <tr>
               <th className="px-4 py-3 font-medium">Service</th>
+              <th className="px-4 py-3 font-medium">Type</th>
               <th className="px-4 py-3 font-medium">Price</th>
               <th className="px-4 py-3 font-medium">Duration</th>
               <th className="px-4 py-3 font-medium">Status</th>
@@ -157,13 +189,16 @@ export function ServicesPanel({
             {enabled.map((service) => (
               <tr key={service.stationServiceId} className="border-b border-slate-100 last:border-0">
                 <td className="px-4 py-3 font-medium text-slate-900">{service.nameEn}</td>
+                <td className="px-4 py-3">
+                  <Badge tone={CATEGORY_TONES[service.category]}>{CATEGORY_LABELS[service.category]}</Badge>
+                </td>
                 <td className="px-4 py-3 text-slate-600">
                   {service.priceOverride ?? service.basePrice} EGP
                   {service.priceOverride !== null && (
                     <span className="ml-1 text-xs text-slate-400">(catalog: {service.basePrice} EGP)</span>
                   )}
                 </td>
-                <td className="px-4 py-3 text-slate-600">{service.durationMinutes} min</td>
+                <td className="px-4 py-3 text-slate-600">{service.durationMinutes !== null ? `${service.durationMinutes} min` : "—"}</td>
                 <td className="px-4 py-3">
                   <Badge tone={service.isActive ? "green" : "gray"}>{service.isActive ? "Enabled" : "Disabled"}</Badge>
                 </td>
@@ -182,7 +217,7 @@ export function ServicesPanel({
             ))}
             {enabled.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-400">
+                <td colSpan={6} className="px-4 py-8 text-center text-sm text-slate-400">
                   No services enabled at this station yet.
                 </td>
               </tr>

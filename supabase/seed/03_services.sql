@@ -8,14 +8,31 @@
 -- than once — see the note at the top of 01_stations.sql.
 -- ============================================================================
 
-INSERT INTO public.services (id, name_en, name_ar, description_en, description_ar, base_price, duration_minutes, requires_employee_selection, requires_resource)
+-- category (supabase/migrations/20240101000300_service_category.sql): Fuel
+-- is station/business information, never bookable — 'INFO'. Café is
+-- customer-facing content (a menu item), also never bookable, but still a
+-- real priced, per-station catalog row like any other — 'CONTENT'. Car
+-- Wash/Oil Change are the actual appointment/queue services — 'BOOKABLE',
+-- the column default, set explicitly below anyway for clarity. This is
+-- seed data's own choice, not a hardcoded rule: an owner can change any
+-- row's category from the admin Services panel.
+INSERT INTO public.services (id, name_en, name_ar, description_en, description_ar, base_price, duration_minutes, requires_employee_selection, requires_resource, category)
 VALUES
-  ('40000000-0000-0000-0000-000000000001', 'Fuel', 'وقود', 'Petrol and diesel fuel.', 'بنزين وديزل.', 0, 5, false, false),
-  ('40000000-0000-0000-0000-000000000002', 'Car Wash Standard', 'غسيل سيارات عادي', 'Exterior wash.', 'غسيل خارجي.', 80, 30, true, true),
-  ('40000000-0000-0000-0000-000000000003', 'Car Wash Premium', 'غسيل سيارات فاخر', 'Interior + exterior wash and polish.', 'غسيل داخلي وخارجي وتلميع.', 180, 45, true, true),
-  ('40000000-0000-0000-0000-000000000004', 'Oil Change', 'تغيير زيت', 'Engine oil and filter change.', 'تغيير زيت المحرك والفلتر.', 250, 30, false, false),
-  ('40000000-0000-0000-0000-000000000005', 'Café', 'كافيه', 'Coffee, drinks, and light snacks.', 'قهوة ومشروبات ووجبات خفيفة.', 0, 10, false, false)
+  ('40000000-0000-0000-0000-000000000001', 'Fuel', 'وقود', 'Petrol and diesel fuel.', 'بنزين وديزل.', 0, 5, false, false, 'INFO'),
+  ('40000000-0000-0000-0000-000000000002', 'Car Wash Standard', 'غسيل سيارات عادي', 'Exterior wash.', 'غسيل خارجي.', 80, 30, true, true, 'BOOKABLE'),
+  ('40000000-0000-0000-0000-000000000003', 'Car Wash Premium', 'غسيل سيارات فاخر', 'Interior + exterior wash and polish.', 'غسيل داخلي وخارجي وتلميع.', 180, 45, true, true, 'BOOKABLE'),
+  ('40000000-0000-0000-0000-000000000004', 'Oil Change', 'تغيير زيت', 'Engine oil and filter change.', 'تغيير زيت المحرك والفلتر.', 250, 30, false, false, 'BOOKABLE'),
+  ('40000000-0000-0000-0000-000000000005', 'Café', 'كافيه', 'Coffee, drinks, and light snacks.', 'قهوة ومشروبات ووجبات خفيفة.', 0, 10, false, false, 'CONTENT')
 ON CONFLICT (id) DO NOTHING;
+
+-- Unconditional, not just ON CONFLICT DO NOTHING's job: if this seed ran
+-- before supabase/migrations/20240101000300_service_category.sql existed,
+-- these two rows already exist with category defaulted to 'BOOKABLE' — the
+-- INSERT above would skip them entirely on a re-run, silently leaving
+-- Fuel/Café bookable. This corrects that regardless of which order
+-- migrations/seed were applied in.
+UPDATE public.services SET category = 'INFO' WHERE id = '40000000-0000-0000-0000-000000000001';
+UPDATE public.services SET category = 'CONTENT' WHERE id = '40000000-0000-0000-0000-000000000005';
 
 -- Fuel is offered at all 3 stations. Car wash / oil change / café vary by
 -- station (see docs/DATABASE_DESIGN.md — "a service should only be

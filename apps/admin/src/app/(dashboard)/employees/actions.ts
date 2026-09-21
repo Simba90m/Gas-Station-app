@@ -3,9 +3,9 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { validateHourRows, type HourRowInput } from "../stations/schema";
 import {
   addCapabilitySchema,
+  addStationScheduleSchema,
   assignStationSchema,
   createShiftSchema,
   employeeDetailsSchema,
@@ -169,37 +169,52 @@ export async function removeCapabilityAction(employeeId: string, capabilityId: s
 }
 
 /**
- * Same shape/validation as upsertStationHoursAction/upsertServiceHoursAction
- * (stations module) — employee_working_hours adds break_starts_at/
- * break_ends_at, which this project's HoursEditor doesn't expose yet, so
- * they're left untouched (NULL) rather than invented here.
+ * Adds one employee_station_schedule row (see
+ * supabase/migrations/20240101000310_employee_station_schedule.sql) —
+ * which station, which day, what time window. Replaces
+ * employee_working_hours as what availability actually reads (see
+ * supabase/migrations/20240101000320_employee_availability_station_schedule.sql);
+ * that older table is preserved but no longer written from this UI.
  */
-export async function upsertEmployeeHoursAction(employeeId: string, rows: HourRowInput[]): Promise<{ error?: string }> {
-  const validationError = validateHourRows(rows);
-  if (validationError) return { error: validationError };
+export async function addStationScheduleAction(_prevState: EmployeeActionState, formData: FormData): Promise<EmployeeActionState> {
+  const employeeId = requiredField(formData, "employee_id");
+  if (!employeeId) return { error: "Missing employee id." };
 
-  const payload = rows.map((row) => ({
-    employee_id: employeeId,
-    day_of_week: row.day_of_week,
-    is_closed: row.mode === "closed",
-    is_24_hours: row.mode === "24h",
-    starts_at: row.mode === "custom" ? row.opens_at : null,
-    ends_at: row.mode === "custom" ? row.closes_at : null,
-  }));
+  const parsed = addStationScheduleSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Check your input and try again." };
 
   const supabase = await createClient();
-  const { data: written, error } = await supabase
-    .from("employee_working_hours")
-    .upsert(payload, { onConflict: "employee_id,day_of_week" })
-    .select("day_of_week");
+  const { error } = await supabase.from("employee_station_schedule").insert({
+    employee_id: employeeId,
+    station_id: parsed.data.station_id,
+    day_of_week: parsed.data.day_of_week,
+    starts_at: parsed.data.starts_at,
+    ends_at: parsed.data.ends_at,
+  });
 
-  if (error) return { error: error.message };
-  if (!written || written.length !== rows.length) {
-    // Most commonly: this employee has no station assignment yet —
-    // employee_working_hours_write requires one to anchor its is_station_staff()
-    // check, by design (see the Phase 6 report's "Limitations").
-    return { error: "Couldn't save hours — make sure this employee is assigned to at least one station first." };
+  if (error) {
+    // 23505 = unique_violation: (employee_id, station_id, day_of_week)
+    // already has a row — check_schedule_station_assignment/
+    // check_schedule_no_overlap raise plain exceptions (no distinct SQLSTATE),
+    // so their messages are already owner-readable and passed through as-is.
+    if (error.code === "23505") {
+      return { error: "This employee already has a schedule entry for that station on that day — remove it first to change the time." };
+    }
+    if (error.message.includes("is not assigned to station")) {
+      return { error: "Assign this employee to that station first (see Assigned stations above)." };
+    }
+    return { error: error.message };
   }
+
+  revalidatePath(`/employees/${employeeId}`);
+  return {};
+}
+
+export async function removeStationScheduleAction(employeeId: string, scheduleId: string): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { error } = await supabase.from("employee_station_schedule").delete().eq("id", scheduleId).select("id").single();
+
+  if (error) return { error: "You don't have permission to remove this, or it's already gone." };
 
   revalidatePath(`/employees/${employeeId}`);
   return {};

@@ -19,6 +19,14 @@ import type { ServiceSelection } from "@/lib/journey-context";
  * same exclusion server-side. Filtered out here too, the same way the
  * admin join flow does, so a parent/category service never even appears
  * as a selectable option.
+ *
+ * Only category = 'BOOKABLE' services are offered here — Fuel (INFO) and
+ * café/content items (CONTENT) are real catalog rows with their own
+ * station availability, but never enter the booking/queue journey (the
+ * customer app's Station → Service → Start Now/Book Later flow). See
+ * supabase/migrations/20240101000300_service_category.sql, which also
+ * enforces this server-side in get_available_slots()/create_booking()/
+ * join_queue() so this filter is a UX convenience, not the only guard.
  */
 export function useStationServices(stationId: string | undefined) {
   return useQuery({
@@ -34,6 +42,7 @@ export function useStationServices(stationId: string | undefined) {
             .from("services")
             .select("id, name_en, name_ar, duration_minutes, parent_service_id")
             .eq("is_active", true)
+            .eq("category", "BOOKABLE")
             .is("deleted_at", null),
           supabase.from("queues").select("id, station_service_id, is_open").eq("station_id", stationId),
         ]);
@@ -54,6 +63,11 @@ export function useStationServices(stationId: string | undefined) {
         if (!service) return [];
         // A package group — organizational only, never directly bookable.
         if (parentServiceIds.has(service.id)) return [];
+        // A BOOKABLE row is guaranteed a duration by the database's own
+        // services_bookable_requires_duration_check — the query above
+        // already filters to category = 'BOOKABLE', so this never actually
+        // trips; it just narrows the type instead of asserting past it.
+        if (service.duration_minutes === null) return [];
 
         const queue = queueByStationServiceId.get(ss.id);
 

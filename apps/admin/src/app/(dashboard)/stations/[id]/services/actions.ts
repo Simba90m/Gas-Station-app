@@ -4,7 +4,13 @@ import { revalidatePath } from "next/cache";
 import type { ResourceStatus } from "@gas-station/types";
 import { createClient } from "@/lib/supabase/server";
 import { validateHourRows, type HourRowInput } from "../../schema";
-import { createServiceSchema, enableServiceSchema, priceOverrideSchema, resourceFormSchema } from "./schema";
+import {
+  createServiceSchema,
+  enableServiceSchema,
+  priceOverrideSchema,
+  resourceFormSchema,
+  updateServiceCategorySchema,
+} from "./schema";
 
 export interface ServiceActionState {
   error?: string;
@@ -65,6 +71,7 @@ export async function createServiceAction(_prevState: ServiceActionState, formDa
       description_ar: parsed.data.description_ar,
       base_price: parsed.data.base_price,
       duration_minutes: parsed.data.duration_minutes,
+      category: parsed.data.category,
       requires_employee_selection: formData.get("requires_employee_selection") === "on",
       requires_resource: formData.get("requires_resource") === "on",
       is_active: formData.get("is_active") === "on",
@@ -133,6 +140,49 @@ export async function updateStationServicePriceAction(
     .single();
 
   if (error) return { error: "You don't have permission to change this, or it no longer exists." };
+
+  revalidatePath(`/stations/${stationId}`);
+  revalidatePath(`/stations/${stationId}/services/${stationServiceId}`);
+  return {};
+}
+
+/**
+ * Changes the catalog service's own type (bookable / station info /
+ * café & content) — not a per-station setting, so this writes `services`
+ * by service_id, not `station_services`. Every station offering this
+ * service is affected, which is the point: the brief is explicit that
+ * "Café can never be booked" must not be a hardcoded rule — it's this
+ * owner-editable field instead.
+ */
+export async function updateServiceCategoryAction(
+  _prevState: ServiceActionState,
+  formData: FormData,
+): Promise<ServiceActionState> {
+  const stationId = requiredField(formData, "station_id");
+  const stationServiceId = requiredField(formData, "station_service_id");
+  const serviceId = requiredField(formData, "service_id");
+  if (!stationId || !stationServiceId || !serviceId) return { error: "Missing station or service id." };
+
+  const parsed = updateServiceCategorySchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Choose a service type." };
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("services")
+    .update({ category: parsed.data.category })
+    .eq("id", serviceId)
+    .select("id")
+    .single();
+
+  if (error) {
+    // services_bookable_requires_duration_check — this service has no
+    // duration set (it was created as station info/café content) and
+    // can't become Bookable until one is set.
+    if (error.message.includes("services_bookable_requires_duration_check")) {
+      return { error: "This service has no duration set. Add a duration before making it bookable." };
+    }
+    return { error: "You don't have permission to change this, or it no longer exists." };
+  }
 
   revalidatePath(`/stations/${stationId}`);
   revalidatePath(`/stations/${stationId}/services/${stationServiceId}`);

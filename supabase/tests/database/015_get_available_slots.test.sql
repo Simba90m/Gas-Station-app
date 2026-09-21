@@ -59,14 +59,14 @@ INSERT INTO public.employee_station_assignments (profile_id, station_id)
 VALUES ('a0000000-0000-0000-0000-000000001551', 'a0000000-0000-0000-0000-000000001510');
 INSERT INTO public.employee_service_capabilities (employee_id, service_id)
 VALUES ('a0000000-0000-0000-0000-000000001551', 'a0000000-0000-0000-0000-000000001520');
-INSERT INTO public.employee_working_hours (employee_id, day_of_week, starts_at, ends_at, break_starts_at, break_ends_at)
-VALUES ('a0000000-0000-0000-0000-000000001551', 1, '08:00', '16:00', '12:00', '12:30');
+INSERT INTO public.employee_station_schedule (employee_id, station_id, day_of_week, starts_at, ends_at, break_starts_at, break_ends_at)
+VALUES ('a0000000-0000-0000-0000-000000001551', 'a0000000-0000-0000-0000-000000001510', 1, '08:00', '16:00', '12:00', '12:30');
 -- Also works Friday (crossing midnight), so the midnight-crossing
 -- assertion below actually exercises the hours/range computation instead
 -- of being starved by "nobody is scheduled that day" — this service
 -- requires an employee, and no employee had ANY Friday row before this.
-INSERT INTO public.employee_working_hours (employee_id, day_of_week, starts_at, ends_at)
-VALUES ('a0000000-0000-0000-0000-000000001551', 5, '17:00', '03:00');
+INSERT INTO public.employee_station_schedule (employee_id, station_id, day_of_week, starts_at, ends_at)
+VALUES ('a0000000-0000-0000-0000-000000001551', 'a0000000-0000-0000-0000-000000001510', 5, '17:00', '03:00');
 
 -- Employee B: capable, assigned to Station A, works Monday 14:00-20:00, no break.
 INSERT INTO auth.users (id, email) VALUES ('a0000000-0000-0000-0000-000000001552', 'slots-emp-b@example.com');
@@ -76,8 +76,8 @@ INSERT INTO public.employee_station_assignments (profile_id, station_id)
 VALUES ('a0000000-0000-0000-0000-000000001552', 'a0000000-0000-0000-0000-000000001510');
 INSERT INTO public.employee_service_capabilities (employee_id, service_id)
 VALUES ('a0000000-0000-0000-0000-000000001552', 'a0000000-0000-0000-0000-000000001520');
-INSERT INTO public.employee_working_hours (employee_id, day_of_week, starts_at, ends_at)
-VALUES ('a0000000-0000-0000-0000-000000001552', 1, '14:00', '20:00');
+INSERT INTO public.employee_station_schedule (employee_id, station_id, day_of_week, starts_at, ends_at)
+VALUES ('a0000000-0000-0000-0000-000000001552', 'a0000000-0000-0000-0000-000000001510', 1, '14:00', '20:00');
 
 -- Employee C: assigned and working, but NOT capable of the service.
 INSERT INTO auth.users (id, email) VALUES ('a0000000-0000-0000-0000-000000001553', 'slots-emp-c@example.com');
@@ -85,8 +85,8 @@ UPDATE public.profiles SET role = 'EMPLOYEE' WHERE id = 'a0000000-0000-0000-0000
 INSERT INTO public.employees (id) VALUES ('a0000000-0000-0000-0000-000000001553');
 INSERT INTO public.employee_station_assignments (profile_id, station_id)
 VALUES ('a0000000-0000-0000-0000-000000001553', 'a0000000-0000-0000-0000-000000001510');
-INSERT INTO public.employee_working_hours (employee_id, day_of_week, starts_at, ends_at)
-VALUES ('a0000000-0000-0000-0000-000000001553', 1, '08:00', '20:00');
+INSERT INTO public.employee_station_schedule (employee_id, station_id, day_of_week, starts_at, ends_at)
+VALUES ('a0000000-0000-0000-0000-000000001553', 'a0000000-0000-0000-0000-000000001510', 1, '08:00', '20:00');
 
 -- Employee D: capable, working, but assigned to the OTHER station.
 INSERT INTO auth.users (id, email) VALUES ('a0000000-0000-0000-0000-000000001554', 'slots-emp-d@example.com');
@@ -96,8 +96,8 @@ INSERT INTO public.employee_station_assignments (profile_id, station_id)
 VALUES ('a0000000-0000-0000-0000-000000001554', 'a0000000-0000-0000-0000-000000001511');
 INSERT INTO public.employee_service_capabilities (employee_id, service_id)
 VALUES ('a0000000-0000-0000-0000-000000001554', 'a0000000-0000-0000-0000-000000001520');
-INSERT INTO public.employee_working_hours (employee_id, day_of_week, starts_at, ends_at)
-VALUES ('a0000000-0000-0000-0000-000000001554', 1, '08:00', '20:00');
+INSERT INTO public.employee_station_schedule (employee_id, station_id, day_of_week, starts_at, ends_at)
+VALUES ('a0000000-0000-0000-0000-000000001554', 'a0000000-0000-0000-0000-000000001511', 1, '08:00', '20:00');
 
 INSERT INTO auth.users (id, email) VALUES ('a0000000-0000-0000-0000-000000001560', 'slots-customer@example.com');
 

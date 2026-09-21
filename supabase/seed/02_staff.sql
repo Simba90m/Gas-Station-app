@@ -72,13 +72,19 @@ VALUES
   ('20000000-0000-0000-0000-000000000041', '2023-05-20', 'Car wash specialist, night shift.', 'متخصص غسيل سيارات، وردية ليلية.')
 ON CONFLICT (id) DO NOTHING;
 
--- Station manager + employee assignments
+-- Station manager + employee assignments. Ahmed is also assigned to
+-- Station 2 (not primary there) — see employee_station_schedule below,
+-- which is what actually puts him on duty at a second station on
+-- Wednesdays; this assignment row alone only makes that station schedule
+-- possible (required by employee_station_schedule's own trigger), it does
+-- not by itself put him on shift anywhere.
 INSERT INTO public.employee_station_assignments (profile_id, station_id, is_primary)
 VALUES
   ('20000000-0000-0000-0000-000000000011', '10000000-0000-0000-0000-000000000001', true),
   ('20000000-0000-0000-0000-000000000012', '10000000-0000-0000-0000-000000000002', true),
   ('20000000-0000-0000-0000-000000000013', '10000000-0000-0000-0000-000000000003', true),
   ('20000000-0000-0000-0000-000000000021', '10000000-0000-0000-0000-000000000001', true),
+  ('20000000-0000-0000-0000-000000000021', '10000000-0000-0000-0000-000000000002', false),
   ('20000000-0000-0000-0000-000000000022', '10000000-0000-0000-0000-000000000001', true),
   ('20000000-0000-0000-0000-000000000031', '10000000-0000-0000-0000-000000000002', true),
   ('20000000-0000-0000-0000-000000000041', '10000000-0000-0000-0000-000000000003', true)
@@ -97,6 +103,30 @@ SELECT '20000000-0000-0000-0000-000000000031'::uuid, d, '08:00'::time, '22:00'::
 UNION ALL
 SELECT '20000000-0000-0000-0000-000000000041'::uuid, d, '18:00'::time, '04:00'::time FROM generate_series(0, 6) AS d
 ON CONFLICT (employee_id, day_of_week) DO NOTHING;
+
+-- Station schedule (supabase/migrations/20240101000310_employee_station_schedule.sql)
+-- — the table availability actually reads now (see
+-- supabase/migrations/20240101000320_employee_availability_station_schedule.sql).
+-- Same hours as employee_working_hours above for every employee EXCEPT
+-- Ahmed on Wednesday, which demonstrates the new multi-station capability
+-- concretely: Station 1 in the morning, Station 2 in the afternoon —
+-- exactly the shape the product brief itself uses as its own model
+-- example, covering the same 08:00-20:00 he otherwise works only at
+-- Station 1.
+INSERT INTO public.employee_station_schedule (employee_id, station_id, day_of_week, starts_at, ends_at)
+SELECT '20000000-0000-0000-0000-000000000021'::uuid, '10000000-0000-0000-0000-000000000001'::uuid, d, '08:00'::time, '20:00'::time
+FROM generate_series(0, 6) AS d WHERE d <> 3
+UNION ALL
+SELECT '20000000-0000-0000-0000-000000000021'::uuid, '10000000-0000-0000-0000-000000000001'::uuid, 3, '08:00'::time, '14:00'::time
+UNION ALL
+SELECT '20000000-0000-0000-0000-000000000021'::uuid, '10000000-0000-0000-0000-000000000002'::uuid, 3, '15:00'::time, '20:00'::time
+UNION ALL
+SELECT '20000000-0000-0000-0000-000000000022'::uuid, '10000000-0000-0000-0000-000000000001'::uuid, d, '20:00'::time, '08:00'::time FROM generate_series(0, 6) AS d
+UNION ALL
+SELECT '20000000-0000-0000-0000-000000000031'::uuid, '10000000-0000-0000-0000-000000000002'::uuid, d, '08:00'::time, '22:00'::time FROM generate_series(0, 6) AS d
+UNION ALL
+SELECT '20000000-0000-0000-0000-000000000041'::uuid, '10000000-0000-0000-0000-000000000003'::uuid, d, '18:00'::time, '04:00'::time FROM generate_series(0, 6) AS d
+ON CONFLICT (employee_id, station_id, day_of_week) DO NOTHING;
 
 -- Car wash capabilities (employee_service_capabilities) are seeded in
 -- 03_services.sql, not here — that table's service_id foreign key needs

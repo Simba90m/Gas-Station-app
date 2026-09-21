@@ -81,12 +81,18 @@ export function CapabilitiesPanel({
         </table>
       </div>
 
-      {available.length > 0 && (
+      {available.length > 0 ? (
         <form action={formAction} className="mt-4 flex items-end gap-3">
           <input type="hidden" name="employee_id" value={employeeId} />
           <div className="flex-1 max-w-xs">
-            <Label htmlFor="service_id">Add a capability</Label>
+            <Label htmlFor="service_id">Add a service capability</Label>
+            {/* key remounts the select after each successful add/remove —
+                without it, this DOM node persists across the server-driven
+                re-render and can keep whatever option was last chosen even
+                though the option list underneath it just changed, which is
+                what made "add a service" look stuck/broken. */}
             <select
+              key={available.map((service) => service.id).join(",")}
               id="service_id"
               name="service_id"
               defaultValue=""
@@ -104,9 +110,15 @@ export function CapabilitiesPanel({
             </select>
           </div>
           <Button type="submit" disabled={isPending}>
-            {isPending ? "Adding..." : "Add"}
+            {isPending ? "Adding..." : "+ Add service capability"}
           </Button>
         </form>
+      ) : (
+        <p className="mt-4 text-sm text-slate-500">
+          {capabilities.length === 0
+            ? "No active services exist yet to add as a capability. Create one from a station's Services panel first."
+            : "This employee already has every active service as a capability. Create a new service from a station's Services panel to add more."}
+        </p>
       )}
       {state.error && (
         <p role="alert" className="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">

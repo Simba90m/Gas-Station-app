@@ -11,7 +11,16 @@ export default async function NewBookingPage() {
     // GROUPS (referenced as someone else's parent) — those are never
     // directly bookable (see check_service_hierarchy_depth() /
     // create_booking() in supabase/migrations/20240101000230_booking_engine.sql).
-    supabase.from("services").select("id, name_en, parent_service_id").eq("is_active", true).is("deleted_at", null),
+    // category = 'BOOKABLE' excludes station info (Fuel) and café/content
+    // items — this staff booking wizard shouldn't offer them any more than
+    // the customer app's own picker does. See
+    // supabase/migrations/20240101000300_service_category.sql.
+    supabase
+      .from("services")
+      .select("id, name_en, parent_service_id")
+      .eq("is_active", true)
+      .eq("category", "BOOKABLE")
+      .is("deleted_at", null),
     supabase.from("station_services").select("id, station_id, service_id").eq("is_active", true),
     supabase.from("profiles").select("id, full_name").eq("role", "EMPLOYEE").is("deleted_at", null).order("full_name"),
   ]);

@@ -61,6 +61,26 @@ export const addCapabilitySchema = z.object({
   service_id: z.string().trim().uuid("Choose a service."),
 });
 
+// One row of employee_station_schedule
+// (supabase/migrations/20240101000310_employee_station_schedule.sql) — a
+// single station + weekday + time window. The "not a permanent 1:1
+// relationship" model from the product brief: an employee can have several
+// of these, at different stations, on the same or different days. Kept
+// deliberately simpler than the station/service HourRowInput shape (no
+// closed/24h/break toggles) — this MVP only needs a plain start/end time
+// per row, matching the brief's own mockup exactly.
+export const addStationScheduleSchema = z
+  .object({
+    station_id: z.string().trim().uuid("Choose a station."),
+    day_of_week: z.coerce.number().int().min(0, "Choose a day.").max(6, "Choose a day."),
+    starts_at: z.string().trim().min(1, "Start time is required."),
+    ends_at: z.string().trim().min(1, "End time is required."),
+  })
+  .refine((data) => data.starts_at !== data.ends_at, {
+    message: "Start and end time can't be the same.",
+    path: ["ends_at"],
+  });
+
 export const createShiftSchema = z
   .object({
     station_id: z.string().trim().uuid("Choose a station."),

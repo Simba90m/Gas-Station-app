@@ -1,5 +1,12 @@
 import { z } from "zod";
 
+// Owner-facing category choice — see
+// supabase/migrations/20240101000300_service_category.sql. Kept as a plain
+// enum here (not imported from @gas-station/types) so zod can validate the
+// raw FormData string directly, same as every other enum-ish field in this
+// file.
+export const serviceCategorySchema = z.enum(["BOOKABLE", "INFO", "CONTENT"]);
+
 export const enableServiceSchema = z.object({
   service_id: z.string().trim().uuid("Choose a service."),
 });
@@ -38,5 +45,22 @@ export const createServiceSchema = z.object({
     .optional()
     .transform((v) => v || null),
   base_price: z.coerce.number().min(0, "Price must be zero or greater."),
-  duration_minutes: z.coerce.number().int("Duration must be a whole number of minutes.").min(1, "Duration must be at least 1 minute."),
+  category: serviceCategorySchema,
+  // Only a BOOKABLE service needs a duration — station info (Fuel) and
+  // café/content items don't. Mirrors the database's own
+  // services_bookable_requires_duration_check constraint, checked again
+  // here so the owner gets a friendly message instead of a raw DB error.
+  duration_minutes: z
+    .string()
+    .trim()
+    .optional()
+    .transform((v) => (v ? Number(v) : null))
+    .refine((v) => v === null || (Number.isInteger(v) && v >= 1), "Duration must be a whole number of minutes, at least 1."),
+}).refine((data) => data.category !== "BOOKABLE" || data.duration_minutes !== null, {
+  message: "Bookable services need a duration (how long the appointment or queue turn takes).",
+  path: ["duration_minutes"],
+});
+
+export const updateServiceCategorySchema = z.object({
+  category: serviceCategorySchema,
 });
