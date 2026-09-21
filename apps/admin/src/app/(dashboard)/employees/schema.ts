@@ -53,12 +53,20 @@ export const employeeDetailsSchema = z.object({
     .transform((v) => v || null),
 });
 
+// .guid() (not .uuid()) deliberately — .uuid() enforces RFC 4122
+// version/variant nibbles, which this project's own seed data
+// (supabase/seed/*.sql) doesn't use: seed ids like
+// '10000000-0000-0000-0000-000000000002' are valid, real Postgres `uuid`
+// values (that column type only checks the 8-4-4-4-12 hex shape, not
+// version bits) but fail .uuid()'s stricter check. .guid() checks the same
+// shape without the version/variant constraint, matching what the database
+// itself actually accepts.
 export const assignStationSchema = z.object({
-  station_id: z.string().trim().uuid("Choose a station."),
+  station_id: z.string().trim().guid("Choose a station."),
 });
 
 export const addCapabilitySchema = z.object({
-  service_id: z.string().trim().uuid("Choose a service."),
+  service_id: z.string().trim().guid("Choose a service."),
 });
 
 // One row of employee_station_schedule
