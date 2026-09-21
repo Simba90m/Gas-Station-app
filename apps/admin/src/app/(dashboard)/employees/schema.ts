@@ -15,7 +15,8 @@ const phoneSchema = z
   .refine((v) => v === null || isValidE164(v), "Enter a valid phone number.");
 
 export const promoteToEmployeeSchema = z.object({
-  profile_id: z.string().trim().uuid("Choose an existing account to promote."),
+  // .guid() not .uuid() — see assignStationSchema below for why.
+  profile_id: z.string().trim().guid("Choose an existing account to promote."),
   hire_date: z
     .string()
     .trim()
@@ -92,7 +93,8 @@ export const addStationScheduleSchema = z
 
 export const createShiftSchema = z
   .object({
-    station_id: z.string().trim().uuid("Choose a station."),
+    // .guid() not .uuid() — see assignStationSchema above for why.
+    station_id: z.string().trim().guid("Choose a station."),
     started_at: z.string().trim().min(1, "Start time is required."),
     ended_at: z.string().trim().min(1, "End time is required."),
   })

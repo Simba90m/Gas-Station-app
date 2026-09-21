@@ -7,8 +7,15 @@ import { z } from "zod";
 // file.
 export const serviceCategorySchema = z.enum(["BOOKABLE", "INFO", "CONTENT"]);
 
+// .guid() not .uuid() — .uuid() enforces RFC 4122 version/variant nibbles,
+// which this project's seed data (supabase/seed/03_services.sql) doesn't
+// use: seed ids like '40000000-0000-0000-0000-000000000002' are valid,
+// real Postgres `uuid` values that fail .uuid()'s stricter check. .guid()
+// checks the same 8-4-4-4-12 hex shape without that constraint, matching
+// what the database itself actually accepts (see
+// apps/admin/src/app/(dashboard)/employees/schema.ts for the same fix).
 export const enableServiceSchema = z.object({
-  service_id: z.string().trim().uuid("Choose a service."),
+  service_id: z.string().trim().guid("Choose a service."),
 });
 
 export const priceOverrideSchema = z.object({
