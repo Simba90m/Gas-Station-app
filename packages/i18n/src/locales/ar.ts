@@ -72,6 +72,10 @@ const ar = {
   "confirmation.status": "الحالة",
   "confirmation.statusConfirmed": "مؤكد",
   "confirmation.done": "تم",
+  "confirmation.completedTitle": "تم إتمام الخدمة",
+  "confirmation.completedMessage": "شكرًا لاستخدامك خدمتنا!",
+  "confirmation.price": "السعر",
+  "confirmation.backToHome": "العودة إلى الرئيسية",
 
   "errors.network": "تحقق من اتصالك وحاول مرة أخرى.",
   "errors.generic": "حدث خطأ ما — يرجى المحاولة مرة أخرى.",

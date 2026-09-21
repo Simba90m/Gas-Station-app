@@ -69,6 +69,10 @@ const en = {
   "confirmation.status": "Status",
   "confirmation.statusConfirmed": "Confirmed",
   "confirmation.done": "Done",
+  "confirmation.completedTitle": "Service completed",
+  "confirmation.completedMessage": "Thank you for using our service!",
+  "confirmation.price": "Price",
+  "confirmation.backToHome": "Back to Home",
 
   "errors.network": "Check your connection and try again.",
   "errors.generic": "Something went wrong — please try again.",

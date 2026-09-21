@@ -1,5 +1,6 @@
 import { router, useLocalSearchParams } from "expo-router";
 import { StyleSheet, View } from "react-native";
+import { BookingCompletedView } from "@/components/booking-completed";
 import { ThemedText } from "@/components/themed-text";
 import { PrimaryButton } from "@/components/ui/primary-button";
 import { Screen } from "@/components/ui/screen";
@@ -41,7 +42,16 @@ export default function ConfirmationScreen() {
       {booking.isLoading && <LoadingView />}
       {(booking.isError || !bookingId) && <ErrorView message={t("common.error")} onRetry={() => booking.refetch()} />}
 
-      {booking.isSuccess && booking.data && (
+      {booking.isSuccess && booking.data && booking.data.status === "COMPLETED" && (
+        <BookingCompletedView
+          stationName={locale === "ar" ? booking.data.stationNameAr : booking.data.stationNameEn}
+          serviceName={locale === "ar" ? booking.data.serviceNameAr : booking.data.serviceNameEn}
+          price={booking.data.price}
+          onDone={handleDone}
+        />
+      )}
+
+      {booking.isSuccess && booking.data && booking.data.status !== "COMPLETED" && (
         <>
           <ThemedText themeColor="textSecondary" style={{ textAlign: isRTL ? "right" : "left" }}>
             {t("confirmation.bookingSubtitle")}

@@ -1,11 +1,14 @@
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect } from "react";
 import { StyleSheet, View } from "react-native";
+import { BookingCompletedView } from "@/components/booking-completed";
 import { ThemedText } from "@/components/themed-text";
 import { PrimaryButton } from "@/components/ui/primary-button";
 import { Screen } from "@/components/ui/screen";
 import { ScreenHeader } from "@/components/ui/screen-header";
 import { ErrorView } from "@/components/ui/state-views";
+import { useBooking } from "@/hooks/use-booking";
+import { useConvertedBookingId } from "@/hooks/use-converted-booking-id";
 import { useJoinQueue } from "@/hooks/use-join-queue";
 import { useQueueStatus } from "@/hooks/use-queue-status";
 import { useJourney } from "@/lib/journey-context";
@@ -32,15 +35,27 @@ const STATUS_KEY: Record<QueueStatus, "queue.statusWaiting" | "queue.statusCalle
  */
 export default function QueueScreen() {
   const { t, locale, isRTL } = useLocale();
-  const { station, service } = useJourney();
+  const { station, service, reset } = useJourney();
   const { entryId } = useLocalSearchParams<{ entryId?: string }>();
 
   const joinQueue = useJoinQueue();
   const status = useQueueStatus(entryId);
 
+  // Once the queue entry itself is COMPLETED, its linked booking (created
+  // by start_queue_service() when service began) is where the price
+  // actually lives — see hooks/use-converted-booking-id.ts.
+  const isCompleted = status.data?.status === "COMPLETED";
+  const convertedBookingId = useConvertedBookingId(entryId, isCompleted);
+  const completedBooking = useBooking(convertedBookingId.data ?? undefined);
+
   useEffect(() => {
     if (!station || !service) router.replace("/stations");
   }, [station, service]);
+
+  function handleBackToHome() {
+    reset();
+    router.replace("/");
+  }
 
   if (!station || !service) return null;
 
@@ -92,6 +107,26 @@ export default function QueueScreen() {
   }
 
   const ticket = status.data;
+
+  if (isCompleted) {
+    return (
+      <Screen>
+        <ScreenHeader title={t("confirmation.queueTitle")} />
+        {completedBooking.isSuccess && completedBooking.data ? (
+          <BookingCompletedView
+            stationName={locale === "ar" ? completedBooking.data.stationNameAr : completedBooking.data.stationNameEn}
+            serviceName={locale === "ar" ? completedBooking.data.serviceNameAr : completedBooking.data.serviceNameEn}
+            price={completedBooking.data.price}
+            onDone={handleBackToHome}
+          />
+        ) : completedBooking.isError ? (
+          <ErrorView message={t("common.error")} onRetry={() => completedBooking.refetch()} />
+        ) : (
+          <ThemedText themeColor="textSecondary">{t("common.loading")}</ThemedText>
+        )}
+      </Screen>
+    );
+  }
 
   return (
     <Screen>
