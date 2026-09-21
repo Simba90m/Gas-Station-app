@@ -1,6 +1,7 @@
 export * from "./constants";
 export * from "./operating-day";
 export * from "./phone";
+export * from "./postgres-range";
 
 // The full booking-availability engine (service hours, employee hours,
 // resource/bay conflicts, slot generation) belongs here too. It's built in

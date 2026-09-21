@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
-import { parseTimeRange } from "@/lib/postgres-range";
+import { parseTimeRange } from "@gas-station/utils";
 import { StatusActions } from "./status-actions";
 
 export default async function BookingDetailPage({ params }: { params: Promise<{ id: string }> }) {

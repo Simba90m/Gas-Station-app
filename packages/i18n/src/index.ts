@@ -15,7 +15,9 @@ export const LOCALES: Record<Locale, LocaleInfo> = {
   ar: { code: "ar", label: "العربية", direction: "rtl" },
 };
 
-export const DEFAULT_LOCALE: Locale = "ar";
+// English is the default across the platform — Arabic is fully supported
+// (see LOCALES above for direction info) but never auto-selected.
+export const DEFAULT_LOCALE: Locale = "en";
 
 const dictionaries: Record<Locale, Record<TranslationKey, string>> = { en, ar };
 

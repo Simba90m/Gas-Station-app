@@ -28,6 +28,24 @@ site_url = "http://localhost:3000"
 additional_redirect_urls = ["http://localhost:3000", "exp://localhost:8081"]
 jwt_expiry = 3600
 enable_signup = true
+# Lets the customer mobile app (apps/mobile) call
+# supabase.auth.signInAnonymously() to get a real session — auth.uid() is a
+# genuine (as-yet-unverified) customer row, so the EXISTING
+# owns_customer_row()-gated join_queue()/create_booking() RLS checks pass
+# unchanged. No new RPC, no RLS relaxation, no bypass: this is the same
+# authorization path every other authenticated caller already uses,
+# nothing new for auth.uid() to mean. Scoped narrowly to the mobile app's
+# Start Now / Book for Later actions, which call this right before
+# submitting if no session exists yet — never on app boot, never for the
+# admin dashboard. Anonymous sessions are Supabase's own standard,
+# supported mechanism for exactly this "let someone act before they've
+# proven who they are" case, and are designed to be upgraded in place
+# later (supabase.auth.updateUser()) once phone/email OTP verification is
+# wired up for the mobile app too — see
+# supabase/migrations/20240101000270_customer_dual_channel_verification.sql
+# for the same signInWithOtp/verifyOtp/updateUser sequence the admin app's
+# public join flow already uses, which will apply here unchanged.
+enable_anonymous_sign_ins = true
 
 [auth.email]
 enable_signup = true

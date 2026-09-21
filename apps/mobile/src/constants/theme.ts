@@ -7,6 +7,9 @@ import '@/global.css';
 
 import { Platform } from 'react-native';
 
+// primary/onPrimary reuse the app's own existing brand color (app.json's
+// splash screen backgroundColor, #208AEF) rather than inventing a new one —
+// same blue, one source of truth for "this app's color" going forward.
 export const Colors = {
   light: {
     text: '#000000',
@@ -14,6 +17,11 @@ export const Colors = {
     backgroundElement: '#F0F0F3',
     backgroundSelected: '#E0E1E6',
     textSecondary: '#60646C',
+    primary: '#208AEF',
+    onPrimary: '#ffffff',
+    border: '#E0E1E6',
+    danger: '#D92D20',
+    success: '#12805C',
   },
   dark: {
     text: '#ffffff',
@@ -21,6 +29,11 @@ export const Colors = {
     backgroundElement: '#212225',
     backgroundSelected: '#2E3135',
     textSecondary: '#B0B4BA',
+    primary: '#4FA3F7',
+    onPrimary: '#000000',
+    border: '#2E3135',
+    danger: '#F97066',
+    success: '#3CCB94',
   },
 } as const;
 

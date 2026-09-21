@@ -20,7 +20,7 @@ without a software background.
 | 1. Repo setup, monorepo, tooling | ✅ Done |
 | 2. Database, auth, RLS | ✅ Done |
 | 3. Admin dashboard foundation & station management | ✅ Done (this commit) |
-| 4. Customer mobile app foundation | ⬜ Next |
+| 4. Customer mobile app foundation | ✅ Done (this commit) |
 | 5+ | ⬜ Not started |
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full phase plan.
@@ -144,8 +144,23 @@ never be shipped inside either app.
 
 `apps/admin` requires the two `NEXT_PUBLIC_*` values above to even start
 (it fails fast with a clear error if they're missing — see
-`apps/admin/src/lib/env.ts`). `apps/mobile` doesn't call Supabase yet
-(Phase 4).
+`apps/admin/src/lib/env.ts`).
+
+`apps/mobile` needs the same project, its own env file:
+
+```bash
+cp apps/mobile/.env.example apps/mobile/.env
+```
+
+```
+EXPO_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
+EXPO_PUBLIC_SUPABASE_ANON_KEY=<the same anon/publishable key as above>
+```
+
+(Same key, different env var name/prefix — `EXPO_PUBLIC_` is Expo's
+equivalent of Next's `NEXT_PUBLIC_`, see `apps/mobile/src/lib/env.ts`.)
+See "Customer mobile app (Phase 4)" below for what's implemented and the
+one extra Supabase Auth setting (`enable_anonymous_sign_ins`) it needs.
 
 ### Using a real (hosted) Supabase project instead
 
@@ -175,6 +190,11 @@ Not required for local development, but when you're ready to deploy:
      `supabase/config.toml`).
    - Without this step, `supabase db push` still applies the schema fine,
      but a customer's phone/email OTP request will fail at send time.
+7. To let the mobile app's Start Now / Book for Later actually work on
+   this hosted project: Authentication → Settings → enable **"Allow
+   anonymous sign-ins"** (matches `enable_anonymous_sign_ins = true` under
+   `[auth]` in `supabase/config.toml`). Free, no external account needed —
+   unlike step 6, this one has no cost.
 
 ### Seeding a hosted development project
 
@@ -338,10 +358,55 @@ above; they're natural additions on top of the same station detail page
 4th, 5th, ... station needs nothing beyond the "New station" form already
 in the admin UI — no schema or code change.
 
-## What's next (Phase 4)
+## Customer mobile app (Phase 4)
 
-Customer mobile app foundation: station discovery and service browsing in
-`apps/mobile`, built on the same database and RLS policies.
+`apps/mobile` (Expo + Expo Router) now implements the first real
+customer-facing journey, entirely on the existing backend — no new tables,
+no queue/booking/availability logic duplicated client-side:
+
+**Screens**: Home → Station selection → Service selection → "What do you
+need?" (Start Now / Book for Later) → live queue ticket (Start Now) or
+date/slot picker → confirmation (Book for Later). English by default,
+Arabic fully translated and switchable live (top-right toggle on Home) —
+see `packages/i18n`.
+
+**Backend calls reused, none duplicated**: `get_available_slots()`,
+`create_booking()`, `join_queue()`, `get_queue_ticket_status()` (a new,
+authenticated-session-authorized replacement for the removed
+`kiosk_queue_status()` — see
+`supabase/migrations/20240101000270_customer_dual_channel_verification.sql`),
+plus anon-readable `stations`/`services`/`station_services`/`queues`
+queries for browsing.
+
+**Anonymous sessions**: `join_queue()`/`create_booking()` require a real
+session (`owns_customer_row()`). Since phone/email OTP isn't wired up for
+mobile yet, the app calls `supabase.auth.signInAnonymously()` lazily,
+right before the first such action — a real, RLS-respecting Supabase Auth
+session, not a new bypass. Requires
+`supabase/config.toml`'s `enable_anonymous_sign_ins = true`, and the
+equivalent on a hosted project: Dashboard → Authentication → Settings →
+"Allow anonymous sign-ins." An anonymous session is designed to be
+upgraded in place later (`supabase.auth.updateUser()`) once phone/email
+verification lands for mobile, the same `signInWithOtp`/`verifyOtp`
+sequence the admin app's public join flow already uses.
+
+Connect the app the same way as admin: `cp apps/mobile/.env.example
+apps/mobile/.env` and fill in `EXPO_PUBLIC_SUPABASE_URL`/
+`EXPO_PUBLIC_SUPABASE_ANON_KEY` with the same values `apps/admin/.env` uses.
+
+**Known limitations**: date picking is a prev/next-day stepper, not a
+calendar widget (every date is still reachable, just one at a time);
+employee selection is always automatic (`create_booking()`'s own default)
+since the UI never offers a choice yet; a parent/category service is
+correctly filtered out of the picker, but there's no drill-down UI for one
+yet (no station currently seeds one); realtime queue status combines a
+Realtime subscription on the customer's own entry with a 15s poll for
+rank changes driven by other customers, since RLS only lets a customer
+read their own `queue_entries` row (see
+`apps/mobile/src/hooks/use-queue-status.ts`). OTP/SMS/email verification,
+real customer registration, vehicle maintenance, loyalty, payments,
+offers, and push notifications are all explicitly out of scope for this
+phase.
 
 ## Tech stack
 

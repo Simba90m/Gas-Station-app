@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
-import { parseTimeRange } from "@/lib/postgres-range";
+import { parseTimeRange } from "@gas-station/utils";
 import { BookingsTable, type BookingRow, type StationOption } from "./bookings-table";
 import { TodaysOperations, type QueueEntryRow, type QueueServiceRow } from "./todays-operations";
 
