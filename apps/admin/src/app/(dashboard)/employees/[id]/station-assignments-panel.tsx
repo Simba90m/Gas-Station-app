@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState, useTransition } from "react";
+import { useActionState, useEffect, useRef, useState, useTransition } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -53,6 +53,25 @@ export function StationAssignmentsPanel({
 }) {
   const [state, formAction, isPending] = useActionState(assignStationAction, INITIAL_STATE);
 
+  // The <select> below is a CONTROLLED component: its value lives in this
+  // state, updated by onChange, and the form submits that exact value (via
+  // the select's `value` prop, which keeps the DOM in sync with this state
+  // rather than relying on an uncontrolled default that a stray re-render
+  // could reset). wasPending tracks the previous isPending value across
+  // renders so the effect below can detect the exact "a submission just
+  // finished successfully" moment (isPending flips true -> false with no
+  // error) and reset the select back to the placeholder then — not on
+  // mount, and not while still pending.
+  const [selectedStationId, setSelectedStationId] = useState("");
+  const wasPending = useRef(false);
+
+  useEffect(() => {
+    if (wasPending.current && !isPending && !state.error) {
+      setSelectedStationId("");
+    }
+    wasPending.current = isPending;
+  }, [isPending, state]);
+
   return (
     <div>
       <div className="overflow-hidden rounded-lg border border-slate-200">
@@ -98,7 +117,8 @@ export function StationAssignmentsPanel({
             <select
               id="station_id"
               name="station_id"
-              defaultValue=""
+              value={selectedStationId}
+              onChange={(e) => setSelectedStationId(e.target.value)}
               required
               className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
             >

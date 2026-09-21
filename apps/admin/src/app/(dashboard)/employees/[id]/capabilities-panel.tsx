@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState, useTransition } from "react";
+import { useActionState, useEffect, useRef, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { addCapabilityAction, removeCapabilityAction, type EmployeeActionState } from "../actions";
@@ -51,6 +51,20 @@ export function CapabilitiesPanel({
 }) {
   const [state, formAction, isPending] = useActionState(addCapabilityAction, INITIAL_STATE);
 
+  // Controlled <select>, same reasoning as StationAssignmentsPanel: value
+  // lives in this state (updated by onChange), the form submits that exact
+  // value, and it's reset back to the placeholder only once a submission
+  // that was actually pending finishes with no error.
+  const [selectedServiceId, setSelectedServiceId] = useState("");
+  const wasPending = useRef(false);
+
+  useEffect(() => {
+    if (wasPending.current && !isPending && !state.error) {
+      setSelectedServiceId("");
+    }
+    wasPending.current = isPending;
+  }, [isPending, state]);
+
   return (
     <div>
       <div className="overflow-hidden rounded-lg border border-slate-200">
@@ -86,16 +100,11 @@ export function CapabilitiesPanel({
           <input type="hidden" name="employee_id" value={employeeId} />
           <div className="flex-1 max-w-xs">
             <Label htmlFor="service_id">Add a service capability</Label>
-            {/* key remounts the select after each successful add/remove —
-                without it, this DOM node persists across the server-driven
-                re-render and can keep whatever option was last chosen even
-                though the option list underneath it just changed, which is
-                what made "add a service" look stuck/broken. */}
             <select
-              key={available.map((service) => service.id).join(",")}
               id="service_id"
               name="service_id"
-              defaultValue=""
+              value={selectedServiceId}
+              onChange={(e) => setSelectedServiceId(e.target.value)}
               required
               className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
             >
