@@ -72,6 +72,7 @@ export async function signInAction(
 }
 
 export async function sendMagicLinkAction(
+  _prevState: SignInState,
   formData: FormData,
 ): Promise<SignInState> {
   const email = String(formData.get("email") ?? "").trim();

@@ -18,6 +18,10 @@ export default function LoginPage() {
     signInAction,
     INITIAL_STATE,
   );
+  const [magicLinkState, magicLinkAction, isMagicLinkPending] = useActionState(
+    sendMagicLinkAction,
+    INITIAL_STATE,
+  );
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
@@ -77,7 +81,7 @@ export default function LoginPage() {
           </p>
 
           <form
-            action={sendMagicLinkAction}
+            action={magicLinkAction}
             className="space-y-2"
           >
             <Input
@@ -87,12 +91,22 @@ export default function LoginPage() {
               required
             />
 
+            {magicLinkState.error && (
+              <p
+                role="alert"
+                className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700"
+              >
+                {magicLinkState.error}
+              </p>
+            )}
+
             <Button
               type="submit"
-              variant="outline"
+              variant="secondary"
               className="w-full"
+              disabled={isMagicLinkPending}
             >
-              Send Magic Link
+              {isMagicLinkPending ? "Sending..." : "Send Magic Link"}
             </Button>
           </form>
         </div>
