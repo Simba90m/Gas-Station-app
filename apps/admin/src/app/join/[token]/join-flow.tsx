@@ -11,13 +11,29 @@ import {
   getAvailableSlotsPublicAction,
   getQueueStatusAction,
   identifyPhoneAction,
+  sendEmailOtpAction,
+  sendPhoneOtpAction,
+  signOutAction,
   startWalkInAction,
+  verifyEmailOtpAction,
+  verifyPhoneOtpAction,
   type PublicServiceOption,
   type PublicStationOption,
   type QueueTicket,
 } from "./actions";
 
 type Mode = "walk-in" | "book";
+
+// The identification/verification sub-flow, once a station + service (+
+// slot, for booking) are chosen:
+//   phone        -> enter phone (+ full name, only if this phone is new)
+//   phone-otp    -> enter the SMS code just sent
+//   email        -> enter email (skipped entirely if already verified)
+//   email-otp    -> enter the emailed code
+// Reaching the end submits the walk-in/booking as the now-verified,
+// signed-in customer — see actions.ts for why this establishes a real
+// session instead of the old sessionless kiosk_* calls.
+type VerifyStep = "phone" | "phone-otp" | "email" | "email-otp";
 
 function todayLocalDate(): string {
   const now = new Date();
@@ -43,14 +59,17 @@ export function JoinFlow({
   const [slotsError, setSlotsError] = useState<string | undefined>();
   const [selectedSlot, setSelectedSlot] = useState<{ start: string; end: string } | null>(null);
 
-  // Phone-first identification: the same phone field drives both "this
-  // number already has an account, just continue" and "brand new — also
-  // collect a name" — never a forced "Create Account" step for a returning
-  // customer.
+  // Identification + verification state.
+  const [verifyStep, setVerifyStep] = useState<VerifyStep>("phone");
   const [phone, setPhone] = useState<string | null>(null);
   const [identifyError, setIdentifyError] = useState<string | undefined>();
   const [identified, setIdentified] = useState<{ exists: boolean; phone: string } | null>(null);
   const [fullName, setFullName] = useState("");
+  const [phoneCode, setPhoneCode] = useState("");
+  const [phoneOtpError, setPhoneOtpError] = useState<string | undefined>();
+  const [email, setEmail] = useState("");
+  const [emailOtpError, setEmailOtpError] = useState<string | undefined>();
+  const [emailCode, setEmailCode] = useState("");
 
   const [submitError, setSubmitError] = useState<string | undefined>();
   const [ticket, setTicket] = useState<QueueTicket | null>(null);
@@ -70,10 +89,16 @@ export function JoinFlow({
     setSlots(null);
     setSelectedSlot(null);
     setSlotsError(undefined);
+    setVerifyStep("phone");
     setPhone(null);
     setIdentifyError(undefined);
     setIdentified(null);
     setFullName("");
+    setPhoneCode("");
+    setPhoneOtpError(undefined);
+    setEmail("");
+    setEmailCode("");
+    setEmailOtpError(undefined);
     setSubmitError(undefined);
   }
 
@@ -106,32 +131,39 @@ export function JoinFlow({
     });
   }
 
-  function handleConfirmIdentity() {
-    if (!identified || !service || !mode) return;
+  function handleSendPhoneOtp() {
+    if (!identified) return;
     if (!identified.exists && !fullName.trim()) {
-      setSubmitError("Enter your name to create an account.");
+      setIdentifyError("Enter your name to create an account.");
       return;
     }
-    setSubmitError(undefined);
+    setIdentifyError(undefined);
+    startTransition(async () => {
+      const result = await sendPhoneOtpAction(token, {
+        phone: identified.phone,
+        fullName: identified.exists ? null : fullName.trim(),
+      });
+      if (result.error) {
+        setIdentifyError(result.error);
+        return;
+      }
+      setVerifyStep("phone-otp");
+    });
+  }
 
+  function submitFinal() {
     startTransition(async () => {
       if (mode === "walk-in") {
-        const result = await startWalkInAction(token, {
-          phone: identified.phone,
-          fullName: identified.exists ? null : fullName.trim(),
-          stationServiceId: service.stationServiceId,
-        });
+        const result = await startWalkInAction(token, service!.stationServiceId);
         if (result.error || !result.ticket) {
           setSubmitError(result.error ?? "Couldn't join the queue.");
           return;
         }
         setTicket(result.ticket);
-      } else if (selectedSlot) {
+      } else if (mode === "book" && selectedSlot) {
         const result = await bookSlotAction(token, {
-          phone: identified.phone,
-          fullName: identified.exists ? null : fullName.trim(),
-          stationId: service.stationId,
-          serviceId: service.serviceId,
+          stationId: service!.stationId,
+          serviceId: service!.serviceId,
           startAt: selectedSlot.start,
         });
         if (result.error) {
@@ -140,6 +172,55 @@ export function JoinFlow({
         }
         setBookingConfirmed(true);
       }
+      // Fire-and-forget kiosk hygiene — the terminal screen is already
+      // showing by the time this resolves, so nothing waits on it.
+      void signOutAction();
+    });
+  }
+
+  function handleVerifyPhoneOtp() {
+    if (!identified || phoneCode.length !== 6) return;
+    setPhoneOtpError(undefined);
+    startTransition(async () => {
+      const result = await verifyPhoneOtpAction(token, { phone: identified.phone, code: phoneCode });
+      if (result.error || !result.verified) {
+        setPhoneOtpError(result.error ?? "That code is incorrect or has expired — please try again.");
+        return;
+      }
+      if (result.emailVerified) {
+        submitFinal();
+      } else {
+        setVerifyStep("email");
+      }
+    });
+  }
+
+  function handleSendEmailOtp() {
+    if (!email.trim()) {
+      setEmailOtpError("Enter your email address.");
+      return;
+    }
+    setEmailOtpError(undefined);
+    startTransition(async () => {
+      const result = await sendEmailOtpAction(token, email.trim());
+      if (result.error) {
+        setEmailOtpError(result.error);
+        return;
+      }
+      setVerifyStep("email-otp");
+    });
+  }
+
+  function handleVerifyEmailOtp() {
+    if (emailCode.length !== 6) return;
+    setEmailOtpError(undefined);
+    startTransition(async () => {
+      const result = await verifyEmailOtpAction(token, { email: email.trim(), code: emailCode });
+      if (result.error || !result.verified) {
+        setEmailOtpError(result.error ?? "That code is incorrect or has expired — please try again.");
+        return;
+      }
+      submitFinal();
     });
   }
 
@@ -324,8 +405,16 @@ export function JoinFlow({
     );
   }
 
-  // Final step: phone-first identification, then (only if genuinely new) a
-  // name field — an existing customer never sees "Create Account".
+  const headerBack = () => {
+    if (verifyStep === "email-otp") return setVerifyStep("email");
+    if (verifyStep === "email") return setVerifyStep("phone-otp");
+    if (verifyStep === "phone-otp") return setVerifyStep("phone");
+    return mode === "book" ? setSelectedSlot(null) : setMode(null);
+  };
+
+  // Final step: phone -> phone OTP -> (if needed) email -> email OTP, then
+  // submit. Never re-asks anything already verified for a returning
+  // customer — see verifyPhoneOtpAction's emailVerified result.
   return (
     <Card>
       <div className="mb-3 flex items-center justify-between">
@@ -333,65 +422,117 @@ export function JoinFlow({
           {stationName} · {service.serviceName}
           {mode === "book" && selectedSlot && ` · ${new Date(selectedSlot.start).toLocaleString()}`}
         </p>
-        <Button
-          variant="ghost"
-          onClick={() => (mode === "book" ? setSelectedSlot(null) : setMode(null))}
-        >
+        <Button variant="ghost" onClick={headerBack}>
           Back
         </Button>
       </div>
 
-      <div className="space-y-3">
-        <PhoneInput
-          id="join_phone"
-          label="Your phone number"
-          value={phone}
-          onChange={(e164) => {
-            setPhone(e164);
-            setIdentified(null);
-            setIdentifyError(undefined);
-          }}
-        />
+      {verifyStep === "phone" && (
+        <div className="space-y-3">
+          <PhoneInput
+            id="join_phone"
+            label="Your phone number"
+            value={phone}
+            onChange={(e164) => {
+              setPhone(e164);
+              setIdentified(null);
+              setIdentifyError(undefined);
+            }}
+          />
 
-        {!identified && (
-          <Button disabled={isPending || !phone} onClick={handleIdentify}>
-            {isPending ? "Checking..." : "Continue"}
-          </Button>
-        )}
-        {identifyError && <p className="text-sm text-red-700">{identifyError}</p>}
-
-        {identified?.exists && (
-          <div className="rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-800">
-            Welcome back! We found your account.
-          </div>
-        )}
-
-        {identified && !identified.exists && (
-          <div>
-            <Label htmlFor="join_name">Full name</Label>
-            <Input id="join_name" value={fullName} onChange={(e) => setFullName(e.target.value)} />
-          </div>
-        )}
-
-        {identified && (
-          <>
-            {submitError && <p className="text-sm text-red-700">{submitError}</p>}
-            <Button
-              className="w-full"
-              disabled={isPending || (!identified.exists && !fullName.trim())}
-              onClick={handleConfirmIdentity}
-            >
-              {isPending
-                ? "Please wait..."
-                : identified.exists
-                  ? "Confirm — it's me"
-                  : mode === "walk-in"
-                    ? "Create account & join the queue"
-                    : "Create account & confirm booking"}
+          {!identified && (
+            <Button disabled={isPending || !phone} onClick={handleIdentify}>
+              {isPending ? "Checking..." : "Continue"}
             </Button>
-          </>
-        )}
-      </div>
+          )}
+
+          {identified?.exists && (
+            <div className="rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-800">
+              Welcome back! We found your account — we&apos;ll text you a code to confirm it&apos;s you.
+            </div>
+          )}
+
+          {identified && !identified.exists && (
+            <div>
+              <Label htmlFor="join_name">Full name</Label>
+              <Input id="join_name" value={fullName} onChange={(e) => setFullName(e.target.value)} />
+            </div>
+          )}
+
+          {identifyError && <p className="text-sm text-red-700">{identifyError}</p>}
+
+          {identified && (
+            <Button className="w-full" disabled={isPending || (!identified.exists && !fullName.trim())} onClick={handleSendPhoneOtp}>
+              {isPending ? "Sending code..." : "Send verification code"}
+            </Button>
+          )}
+        </div>
+      )}
+
+      {verifyStep === "phone-otp" && identified && (
+        <div className="space-y-3">
+          <p className="text-sm text-slate-600">
+            Enter the 6-digit code we texted to {identified.phone}.
+          </p>
+          <div>
+            <Label htmlFor="join_phone_code">Verification code</Label>
+            <Input
+              id="join_phone_code"
+              inputMode="numeric"
+              maxLength={6}
+              value={phoneCode}
+              onChange={(e) => setPhoneCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            />
+          </div>
+          {phoneOtpError && <p className="text-sm text-red-700">{phoneOtpError}</p>}
+          <Button className="w-full" disabled={isPending || phoneCode.length !== 6} onClick={handleVerifyPhoneOtp}>
+            {isPending ? "Verifying..." : "Verify"}
+          </Button>
+          <button type="button" onClick={handleSendPhoneOtp} disabled={isPending} className="text-sm text-slate-500 underline">
+            Didn&apos;t get a code? Send again
+          </button>
+        </div>
+      )}
+
+      {verifyStep === "email" && (
+        <div className="space-y-3">
+          <p className="text-sm text-slate-600">One last step — verify your email address.</p>
+          <div>
+            <Label htmlFor="join_email">Email address</Label>
+            <Input id="join_email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          </div>
+          {emailOtpError && <p className="text-sm text-red-700">{emailOtpError}</p>}
+          <Button className="w-full" disabled={isPending || !email.trim()} onClick={handleSendEmailOtp}>
+            {isPending ? "Sending code..." : "Send verification code"}
+          </Button>
+        </div>
+      )}
+
+      {verifyStep === "email-otp" && (
+        <div className="space-y-3">
+          <p className="text-sm text-slate-600">Enter the 6-digit code we emailed to {email.trim()}.</p>
+          <div>
+            <Label htmlFor="join_email_code">Verification code</Label>
+            <Input
+              id="join_email_code"
+              inputMode="numeric"
+              maxLength={6}
+              value={emailCode}
+              onChange={(e) => setEmailCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            />
+          </div>
+          {emailOtpError && <p className="text-sm text-red-700">{emailOtpError}</p>}
+          {submitError && <p className="text-sm text-red-700">{submitError}</p>}
+          <Button className="w-full" disabled={isPending || emailCode.length !== 6} onClick={handleVerifyEmailOtp}>
+            {isPending ? "Please wait..." : "Verify & continue"}
+          </Button>
+          <button type="button" onClick={handleSendEmailOtp} disabled={isPending} className="text-sm text-slate-500 underline">
+            Didn&apos;t get a code? Send again
+          </button>
+        </div>
+      )}
+
+      {verifyStep === "phone-otp" && submitError && <p className="mt-2 text-sm text-red-700">{submitError}</p>}
     </Card>
   );
 }

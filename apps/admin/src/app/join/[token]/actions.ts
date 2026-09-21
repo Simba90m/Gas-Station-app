@@ -2,36 +2,28 @@
 
 import { timingSafeEqual } from "node:crypto";
 import type { QueueStatus } from "@gas-station/types";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { createCustomerAccount } from "@/lib/customer-account";
 import { env } from "@/lib/env";
-import { publicPhoneSchema, publicStartWalkInSchema, publicBookSlotSchema } from "./schema";
+import {
+  publicPhoneSchema,
+  publicSendPhoneOtpSchema,
+  publicVerifyPhoneOtpSchema,
+  publicSendEmailOtpSchema,
+  publicVerifyEmailOtpSchema,
+  publicStartWalkInSchema,
+  publicBookSlotSchema,
+} from "./schema";
 
 const MISCONFIGURED_ERROR = "This page isn't available right now — please ask a staff member for help.";
-
-/** createAdminClient() throws synchronously if SUPABASE_SERVICE_ROLE_KEY is
- * missing — every action below that needs it wraps its call in this so a
- * genuinely misconfigured server never escapes as an uncaught exception
- * (which would replace this whole page with an error screen instead of a
- * normal, localized error message — see createCustomerAction's own
- * try/catch in (dashboard)/bookings/actions.ts for the original of this
- * exact failure mode). */
-async function runKioskAction<T>(fn: () => Promise<T>): Promise<T | { error: string }> {
-  try {
-    return await fn();
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Unexpected error.";
-    console.error("[join/[token]/actions]", message);
-    return { error: MISCONFIGURED_ERROR };
-  }
-}
+const INVALID_LINK_ERROR = "This link is no longer valid — please scan the QR code at the station again.";
+const BAD_CODE_ERROR = "That code is incorrect or has expired — please try again.";
+const NOT_SIGNED_IN_ERROR = "Your session expired — please verify your phone number again.";
 
 /**
  * Every action below is reachable by anyone who has this route's URL — it
- * cannot be gated by getCurrentAdminUser() the way createCustomerAction is
- * (there's no signed-in staff member here to check), so this file's
- * authorization model is deliberately different, not a copy of it:
+ * cannot be gated by getCurrentAdminUser() the way the admin dashboard's
+ * actions are (there's no signed-in staff member here), so this file's
+ * authorization model is deliberately different:
  *
  *  1. A coarse "you're physically at one of our stations" gate: the [token]
  *     route param must match QR_JOIN_TOKEN (checked again in every action
@@ -40,34 +32,25 @@ async function runKioskAction<T>(fn: () => Promise<T>): Promise<T | { error: str
  *  2. Strict input validation (schema.ts), reusing the one global phone
  *     utility (@gas-station/utils) every other phone field in this app
  *     validates against.
- *  3. No browser session, for anyone, new or returning. An earlier version
- *     of this flow signed a brand-new customer into a real session — that
- *     depended on Supabase's Phone auth provider (or, in a since-reverted
- *     attempt, still needed *some* sign-in mechanism), and had no safe way
- *     to extend the same idea to a RETURNING customer at all (resetting
- *     their real password and signing in as them would let anyone who
- *     merely knows their phone number impersonate them with a full
- *     session — view/cancel their real bookings, etc. — which is exactly
- *     the kind of broad privilege bypass this project's standing rules
- *     forbid). So neither path ever establishes a session. Every
- *     privileged action goes through the sessionless kiosk_* Postgres
- *     functions instead (supabase/migrations/20240101000260_global_phone_and_kiosk.sql)
- *     — service_role-only, called with an already-resolved customer_id,
- *     narrowly scoped to "join this one queue" / "create this one
- *     booking", nothing more (no profile/data access, no way to touch any
- *     of that customer's OTHER bookings). The residual risk — someone who
- *     knows or guesses another person's phone number could add a walk-in
- *     entry under their name — is a low-severity nuisance, not an account
- *     takeover, and no different in kind from a staff member already being
- *     able to do the same today via the admin "search by phone, book for
- *     them" flow; it just doesn't require a staff member to be the one
- *     doing it.
- *  4. A brand-new customer's account is still created here with the
- *     service-role admin client, but via the SAME shared helper
- *     (lib/customer-account.ts) the staff-only createCustomerAction uses —
- *     not a second copy of that logic — and a phone that already has an
- *     account is never silently reused to fabricate a duplicate; it's
- *     looked up and continued instead (see startWalkInAction/bookSlotAction).
+ *  3. A REAL Supabase Auth session, established only after the visitor
+ *     verifies a one-time code sent to their own phone, then a second one
+ *     sent to their own email (supabase.auth.signInWithOtp/verifyOtp/
+ *     updateUser below). Once verified, auth.uid() genuinely is that
+ *     customer, so the ordinary owns_customer_row()-gated create_booking()/
+ *     join_queue() (used by every other authenticated caller in this app)
+ *     are what this file calls too — no service-role bypass, no
+ *     sessionless "trust this customer_id" RPCs. See
+ *     supabase/migrations/20240101000270_customer_dual_channel_verification.sql
+ *     for why this replaces the earlier sessionless kiosk_* design (that
+ *     design's own stated reason — "no safe way to prove the visitor IS
+ *     that customer, no OTP" — is exactly what OTP verification now
+ *     provides).
+ *  4. Kiosk hygiene: signOutAction() below is called once the flow reaches
+ *     its terminal screen (ticket shown / booking confirmed), so a session
+ *     never lingers past a single visit on a device someone else might use
+ *     next — even though most customers reach this on their own phone, the
+ *     printed/displayed QR code could in principle be scanned on a shared
+ *     device too.
  */
 function tokenMatches(token: string): boolean {
   let expectedRaw: string;
@@ -83,7 +66,26 @@ function tokenMatches(token: string): boolean {
   return timingSafeEqual(expected, actual);
 }
 
-const INVALID_LINK_ERROR = "This link is no longer valid — please scan the QR code at the station again.";
+/** Maps a handful of known Supabase Auth error shapes to friendly copy; everything else falls back to a generic message rather than leaking internals. */
+function friendlyAuthError(message: string): string {
+  if (/already.*registered|already.*exists/i.test(message)) {
+    return "This email is already linked to another account.";
+  }
+  if (/expired|invalid/i.test(message)) {
+    return BAD_CODE_ERROR;
+  }
+  return MISCONFIGURED_ERROR;
+}
+
+async function runPublicAction<T>(fn: () => Promise<T>): Promise<T | { error: string }> {
+  try {
+    return await fn();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unexpected error.";
+    console.error("[join/[token]/actions]", message);
+    return { error: MISCONFIGURED_ERROR };
+  }
+}
 
 export interface PublicStationOption {
   id: string;
@@ -127,49 +129,13 @@ function ticketFromRow(row: {
 }
 
 /**
- * Looks up an already-created customer by phone via the service-role
- * client (profiles isn't anon-readable, and this needs the real id, unlike
- * the anon-safe boolean-only customer_phone_registered() RPC the phone-
- * identify step uses). Internal to this file — the customer_id it resolves
- * is never sent back to the browser.
- */
-async function resolveOrCreateCustomerId(input: {
-  phone: string;
-  fullName: string | null;
-}): Promise<{ customerId: string } | { error: string }> {
-  const admin = createAdminClient();
-  const { data: existing, error: lookupError } = await admin
-    .from("profiles")
-    .select("id")
-    .eq("phone", input.phone)
-    .eq("role", "CUSTOMER")
-    .is("deleted_at", null)
-    .maybeSingle();
-
-  if (lookupError) {
-    console.error("[resolveOrCreateCustomerId] lookup failed:", lookupError.message);
-    return { error: "Something went wrong — please try again." };
-  }
-
-  if (existing) return { customerId: existing.id };
-
-  if (!input.fullName) {
-    return { error: "This phone number isn't registered yet — enter your name to create an account." };
-  }
-
-  const created = await createCustomerAccount({ fullName: input.fullName, phone: input.phone });
-  if (created.error || !created.customerId) {
-    return { error: created.error ?? "Couldn't create your account — please try again." };
-  }
-  return { customerId: created.customerId };
-}
-
-/**
  * The phone-first identification step: does an account already exist for
  * this number? Read-only, anon-safe (customer_phone_registered() returns
- * only a boolean — see the migration for why). Drives which screen comes
- * next (a "welcome back" continuation vs. the name-collection form) —
- * never forces "Create Account" on a returning customer.
+ * only a boolean — see supabase/migrations/20240101000260_global_phone_and_kiosk.sql).
+ * Drives which screen comes next (a "welcome back" continuation vs. the
+ * name-collection form) — never forces full-name entry on a returning
+ * customer. Purely a UX branch — ownership is never established by this
+ * call, only by the OTP verification that follows.
  */
 export async function identifyPhoneAction(
   token: string,
@@ -180,12 +146,106 @@ export async function identifyPhoneAction(
   const parsed = publicPhoneSchema.safeParse({ phone });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Enter a valid phone number." };
 
-  return runKioskAction(async () => {
+  return runPublicAction(async () => {
     const supabase = await createClient();
     const { data, error } = await supabase.rpc("customer_phone_registered", { p_phone: parsed.data.phone });
 
     if (error) return { error: error.message };
     return { exists: data ?? false, normalizedPhone: parsed.data.phone };
+  });
+}
+
+/** Step 1a: send the phone OTP. shouldCreateUser defaults to true — a brand-new phone becomes a new (still unverified-by-email) account, an existing phone just gets a login code; handle_new_user() only fires on the former. */
+export async function sendPhoneOtpAction(
+  token: string,
+  input: { phone: string; fullName: string | null },
+): Promise<{ error?: string }> {
+  if (!tokenMatches(token)) return { error: INVALID_LINK_ERROR };
+
+  const parsed = publicSendPhoneOtpSchema.safeParse({ phone: input.phone, full_name: input.fullName ?? undefined });
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Check your input and try again." };
+
+  return runPublicAction(async () => {
+    const supabase = await createClient();
+    const { error } = await supabase.auth.signInWithOtp({
+      phone: parsed.data.phone,
+      options: { data: { phone: parsed.data.phone, full_name: parsed.data.full_name } },
+    });
+
+    if (error) {
+      console.error("[sendPhoneOtpAction] signInWithOtp failed:", error.message);
+      return { error: friendlyAuthError(error.message) };
+    }
+    return {};
+  });
+}
+
+/** Step 1b: verify the phone OTP — this is what actually establishes the real session. Returns whether this customer already has a verified email on file, so the client knows whether to skip straight past the email step. */
+export async function verifyPhoneOtpAction(
+  token: string,
+  input: { phone: string; code: string },
+): Promise<{ verified?: boolean; emailVerified?: boolean; error?: string }> {
+  if (!tokenMatches(token)) return { error: INVALID_LINK_ERROR };
+
+  const parsed = publicVerifyPhoneOtpSchema.safeParse({ phone: input.phone, code: input.code });
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Check your input and try again." };
+
+  return runPublicAction(async () => {
+    const supabase = await createClient();
+    const { data, error } = await supabase.auth.verifyOtp({
+      phone: parsed.data.phone,
+      token: parsed.data.code,
+      type: "sms",
+    });
+
+    if (error || !data.user) return { error: BAD_CODE_ERROR };
+
+    const { data: profile } = await supabase.from("profiles").select("email").eq("id", data.user.id).single();
+
+    return { verified: true, emailVerified: Boolean(profile?.email) };
+  });
+}
+
+/** Step 2a: attach + send a confirmation code to the customer's email. Requires the phone-verified session from the previous step. */
+export async function sendEmailOtpAction(token: string, email: string): Promise<{ error?: string }> {
+  if (!tokenMatches(token)) return { error: INVALID_LINK_ERROR };
+
+  const parsed = publicSendEmailOtpSchema.safeParse({ email });
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Enter a valid email address." };
+
+  return runPublicAction(async () => {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return { error: NOT_SIGNED_IN_ERROR };
+
+    const { error } = await supabase.auth.updateUser({ email: parsed.data.email });
+    if (error) {
+      console.error("[sendEmailOtpAction] updateUser failed:", error.message);
+      return { error: friendlyAuthError(error.message) };
+    }
+    return {};
+  });
+}
+
+/** Step 2b: verify the email OTP — sync_profile_email() (the auth.users trigger) copies the now-confirmed address into profiles.email as a side effect of this. */
+export async function verifyEmailOtpAction(token: string, input: { email: string; code: string }): Promise<{ verified?: boolean; error?: string }> {
+  if (!tokenMatches(token)) return { error: INVALID_LINK_ERROR };
+
+  const parsed = publicVerifyEmailOtpSchema.safeParse({ email: input.email, code: input.code });
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Check your input and try again." };
+
+  return runPublicAction(async () => {
+    const supabase = await createClient();
+    const { error } = await supabase.auth.verifyOtp({
+      email: parsed.data.email,
+      token: parsed.data.code,
+      type: "email_change",
+    });
+
+    if (error) return { error: BAD_CODE_ERROR };
+    return { verified: true };
   });
 }
 
@@ -197,7 +257,7 @@ export async function getAvailableSlotsPublicAction(
 ): Promise<{ slots: { start: string; end: string }[]; error?: string }> {
   if (!tokenMatches(token)) return { slots: [], error: INVALID_LINK_ERROR };
 
-  const result = await runKioskAction(async () => {
+  const result = await runPublicAction(async () => {
     const supabase = await createClient();
     const { data, error } = await supabase.rpc("get_available_slots", {
       p_station_id: stationId,
@@ -212,36 +272,32 @@ export async function getAvailableSlotsPublicAction(
 }
 
 /**
- * "Start Now": resolves (or, for a genuinely new phone, creates) the
- * customer, then joins the walk-in queue via kiosk_join_queue() — never
- * shows/uses future booking slots.
+ * "Start Now": joins the walk-in queue as the now-verified, signed-in
+ * customer, via the same join_queue() every other authenticated caller
+ * uses (owns_customer_row() authorizes it — auth.uid() really is this
+ * customer at this point).
  */
-export async function startWalkInAction(
-  token: string,
-  input: { phone: string; fullName: string | null; stationServiceId: string },
-): Promise<{ ticket?: QueueTicket; error?: string }> {
+export async function startWalkInAction(token: string, stationServiceId: string): Promise<{ ticket?: QueueTicket; error?: string }> {
   if (!tokenMatches(token)) return { error: INVALID_LINK_ERROR };
 
-  const parsed = publicStartWalkInSchema.safeParse({
-    phone: input.phone,
-    full_name: input.fullName ?? undefined,
-    station_service_id: input.stationServiceId,
-  });
+  const parsed = publicStartWalkInSchema.safeParse({ station_service_id: stationServiceId });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Check your input and try again." };
 
-  return runKioskAction(async () => {
-    const resolved = await resolveOrCreateCustomerId({ phone: parsed.data.phone, fullName: parsed.data.full_name });
-    if ("error" in resolved) return { error: resolved.error };
+  return runPublicAction(async () => {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return { error: NOT_SIGNED_IN_ERROR };
 
-    const admin = createAdminClient();
-    const { data: entry, error: joinError } = await admin.rpc("kiosk_join_queue", {
-      p_customer_id: resolved.customerId,
+    const { data: entry, error: joinError } = await supabase.rpc("join_queue", {
+      p_customer_id: user.id,
       p_station_service_id: parsed.data.station_service_id,
     });
 
     if (joinError || !entry) return { error: joinError?.message ?? "Couldn't join the queue — please try again." };
 
-    const { data: status, error: statusError } = await admin.rpc("kiosk_queue_status", { p_queue_entry_id: entry.id });
+    const { data: status, error: statusError } = await supabase.rpc("get_queue_ticket_status", { p_queue_entry_id: entry.id });
     const row = status?.[0];
     if (statusError || !row) {
       return { error: statusError?.message ?? "Joined the queue, but couldn't load your ticket — please ask a staff member for your position." };
@@ -254,9 +310,9 @@ export async function startWalkInAction(
 export async function getQueueStatusAction(token: string, queueEntryId: string): Promise<{ ticket?: QueueTicket; error?: string }> {
   if (!tokenMatches(token)) return { error: INVALID_LINK_ERROR };
 
-  return runKioskAction(async () => {
-    const admin = createAdminClient();
-    const { data: status, error } = await admin.rpc("kiosk_queue_status", { p_queue_entry_id: queueEntryId });
+  return runPublicAction(async () => {
+    const supabase = await createClient();
+    const { data: status, error } = await supabase.rpc("get_queue_ticket_status", { p_queue_entry_id: queueEntryId });
     const row = status?.[0];
     if (error || !row) return { error: error?.message ?? "Couldn't load your ticket status." };
 
@@ -265,33 +321,33 @@ export async function getQueueStatusAction(token: string, queueEntryId: string):
 }
 
 /**
- * "Book for Later": resolves/creates the customer the same way as
- * startWalkInAction, then creates a real booking for the explicitly chosen
- * slot via kiosk_create_booking() — the existing availability engine
- * (get_available_slots) and booking-conflict logic, not a second copy.
+ * "Book for Later": creates a real booking for the explicitly chosen slot
+ * via create_booking() — the same availability engine (get_available_slots)
+ * and booking-conflict logic every other authenticated caller uses, as the
+ * now-verified, signed-in customer.
  */
 export async function bookSlotAction(
   token: string,
-  input: { phone: string; fullName: string | null; stationId: string; serviceId: string; startAt: string },
+  input: { stationId: string; serviceId: string; startAt: string },
 ): Promise<{ bookingId?: string; error?: string }> {
   if (!tokenMatches(token)) return { error: INVALID_LINK_ERROR };
 
   const parsed = publicBookSlotSchema.safeParse({
-    phone: input.phone,
-    full_name: input.fullName ?? undefined,
     station_id: input.stationId,
     service_id: input.serviceId,
     start_at: input.startAt,
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Check your input and try again." };
 
-  return runKioskAction(async () => {
-    const resolved = await resolveOrCreateCustomerId({ phone: parsed.data.phone, fullName: parsed.data.full_name });
-    if ("error" in resolved) return { error: resolved.error };
+  return runPublicAction(async () => {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return { error: NOT_SIGNED_IN_ERROR };
 
-    const admin = createAdminClient();
-    const { data, error } = await admin.rpc("kiosk_create_booking", {
-      p_customer_id: resolved.customerId,
+    const { data, error } = await supabase.rpc("create_booking", {
+      p_customer_id: user.id,
       p_station_id: parsed.data.station_id,
       p_service_id: parsed.data.service_id,
       p_start_at: parsed.data.start_at,
@@ -300,4 +356,10 @@ export async function bookSlotAction(
     if (error || !data) return { error: error?.message ?? "Couldn't create the booking — please try again." };
     return { bookingId: data.id };
   });
+}
+
+/** Kiosk hygiene: called once the flow reaches its terminal screen — see the file-level doc comment, point 4. */
+export async function signOutAction(): Promise<void> {
+  const supabase = await createClient();
+  await supabase.auth.signOut();
 }

@@ -1,8 +1,5 @@
 import "server-only";
-import { randomBytes } from "node:crypto";
 import { createAdminClient } from "./supabase/admin";
-
-const SYNTHETIC_EMAIL_DOMAIN = "customers.invalid";
 
 export interface CreateCustomerAccountInput {
   fullName: string;
@@ -20,55 +17,47 @@ export interface CreateCustomerAccountResult {
  * Creates a real auth.users account for a customer, then hands back its id
  * — the one operation this app cannot do through a plain `authenticated`
  * session (auth.users is not writable directly; see
- * supabase/migrations/20240101000070_auth_handlers.sql). Shared by both the
+ * supabase/migrations/20240101000070_auth_handlers.sql). Used by the
  * admin-staff-driven flow ((dashboard)/bookings/actions.ts
- * createCustomerAction) and the public QR kiosk flow
- * (join/[token]/actions.ts) — one function, not two copies of the same
- * account-creation logic.
+ * createCustomerAction) — a staff member is physically present with the
+ * customer, so this creates the account directly with phone_confirm: true
+ * rather than sending an OTP; no email is collected here.
  *
- * Uses a synthetic, never-shown, never-emailed ".invalid" address (RFC
- * 2606 — reserved specifically so it can never resolve to a real domain)
- * as the Supabase Auth identifier, instead of the customer's real phone
- * number. This is the actual root-cause fix for the public flow's
- * "Couldn't create an account" error: creating a user by `phone` depends
- * on the hosted Supabase project having its Phone auth provider enabled
- * (real SMS infrastructure this project has never configured —
- * `phone_confirm: true` only skips SENDING an OTP, it does not skip the
- * provider needing to be enabled at all), which was silently failing every
- * phone-based `createUser()` call, in both call sites. Email/password is
- * Supabase's default, always-enabled provider, so this has no such
- * dependency. The customer's real phone goes in `user_metadata.phone`,
- * which `handle_new_user()` (unchanged) already copies into
- * `profiles.phone` exactly as before — nobody ever sees or uses the
- * synthetic email or the throwaway password; neither call site signs in
- * with them (see join/[token]/actions.ts for why the public flow no longer
- * needs a browser session at all).
+ * The public QR kiosk flow (join/[token]/actions.ts) no longer calls this
+ * — a public/anonymous kiosk visitor has no staff member vouching for them
+ * in person, so their account is created (and both phone and email
+ * verified) through real OTP verification instead
+ * (supabase.auth.signInWithOtp/verifyOtp), which also establishes their
+ * own session — see
+ * supabase/migrations/20240101000270_customer_dual_channel_verification.sql.
  *
- * Duplicate phones are now caught for real by profiles_phone_unique_idx
- * (see supabase/migrations/20240101000260_global_phone_and_kiosk.sql) —
- * callers should still check customer_phone_registered() first (the public
- * flow's whole point is to never reach this function at all for an
- * existing customer), this is the safety net for the rare simultaneous-
- * signup race, not the primary duplicate-prevention path.
+ * Requires the Phone auth provider to be configured with a real SMS
+ * vendor (Twilio — see README.md "Phone/email OTP") even though no OTP is
+ * actually sent here: `phone_confirm: true` skips SENDING one, but the
+ * provider still needs to be enabled for phone-based account creation to
+ * work at all. Previously this used a synthetic, never-shown
+ * ".invalid"-domain email + throwaway password instead, specifically to
+ * avoid that dependency (see git history) — now that the provider is
+ * required anyway for the public flow's phone OTP, that workaround is
+ * unnecessary for this call site too.
+ *
+ * Duplicate phones are caught for real by profiles_phone_unique_idx (see
+ * supabase/migrations/20240101000260_global_phone_and_kiosk.sql) — callers
+ * should still check for an existing customer by phone first where
+ * practical; this is the safety net for the rare simultaneous-creation
+ * race, not the primary duplicate-prevention path.
  */
 export async function createCustomerAccount(input: CreateCustomerAccountInput): Promise<CreateCustomerAccountResult> {
   const admin = createAdminClient();
-  const throwawayPassword = randomBytes(32).toString("hex");
-  const syntheticEmail = `phone-${input.phone.replace(/^\+/, "")}-${randomBytes(4).toString("hex")}@${SYNTHETIC_EMAIL_DOMAIN}`;
 
   const { data, error } = await admin.auth.admin.createUser({
-    email: syntheticEmail,
-    email_confirm: true,
-    password: throwawayPassword,
+    phone: input.phone,
+    phone_confirm: true,
     user_metadata: { full_name: input.fullName, phone: input.phone },
   });
 
   if (error || !data.user) {
     const message = error?.message ?? "unknown error";
-    // Always logged, not just on the generic fallback below — the previous
-    // version of this flow only logged inside a catch block reached by
-    // thrown exceptions, so a normal (non-throwing) createUser() failure —
-    // e.g. a disabled auth provider — left no server-side trace at all.
     console.error("[createCustomerAccount] auth.admin.createUser failed:", message);
 
     if (/duplicate|unique|already/i.test(message)) {

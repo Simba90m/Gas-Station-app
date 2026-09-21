@@ -84,6 +84,19 @@ Open **Studio** (the URL printed above, normally http://127.0.0.1:54323) to
 browse the schema and seeded data in a UI — this is the easiest way to look
 around without writing SQL.
 
+### Phone/email OTP (public join flow customer verification)
+
+The public `/join/[token]` flow verifies a customer by phone OTP, then email
+OTP, before creating/using their account — see
+`supabase/migrations/20240101000270_customer_dual_channel_verification.sql`
+for why. Locally, no real SMS vendor or spend is needed: `[auth.sms.test_otp]`
+in `supabase/config.toml` maps a couple of fixed test phone numbers to fixed
+codes (e.g. `+201000000001` → `123456`) — use one of those numbers when
+testing the flow locally instead of a real phone, and the local stack never
+sends a real SMS. Email OTP uses the local stack's own mail (viewable via
+Inbucket, printed in the `supabase start` output) — no real email vendor
+needed locally either.
+
 ### Demo accounts (seeded, local only)
 
 Every seeded account uses the password `password123`. Real accounts must never
@@ -150,6 +163,18 @@ Not required for local development, but when you're ready to deploy:
 5. Put the hosted project's URL and publishable key into `apps/admin/.env`
    the same way as above (Settings → API in the Supabase dashboard, under
    "Publishable key").
+6. To actually use the public join flow's phone/email OTP verification on
+   this hosted project (not just apply the schema that supports it):
+   - Authentication → Providers → **Phone**: enable it, choose Twilio, and
+     enter the same Account SID / Auth Token / Messaging Service SID as
+     `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_MESSAGE_SERVICE_SID`
+     in `.env.example` (root) — a real Twilio account is required; this is
+     the one piece of this setup that isn't free.
+   - Authentication → **Emails**: enable "Confirm email" (matches
+     `enable_confirmations = true` under `[auth.email]` in
+     `supabase/config.toml`).
+   - Without this step, `supabase db push` still applies the schema fine,
+     but a customer's phone/email OTP request will fail at send time.
 
 ### Seeding a hosted development project
 

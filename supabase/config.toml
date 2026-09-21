@@ -31,10 +31,32 @@ enable_signup = true
 
 [auth.email]
 enable_signup = true
-# OTP/magic-link email delivery isn't configured yet — Phase 2 seeds demo
-# accounts directly instead of through real signup. Revisit when the
-# customer/employee apps build real registration screens.
-enable_confirmations = false
+# Required for the public join flow's email-OTP step (customer verification
+# — see supabase/migrations/20240101000270_customer_dual_channel_verification.sql).
+# Was false — Phase 2 seeded demo accounts directly instead of through real
+# signup, so this was never exercised until now.
+enable_confirmations = true
+
+# Phone OTP — the public /join/[token] flow's first verification step.
+# Requires a real SMS vendor; local/CI testing uses auth.sms.test_otp below
+# instead of sending real SMS. The equivalent for a hosted project is
+# Dashboard -> Authentication -> Providers -> Phone, with the same Twilio
+# credentials (this file only configures the local CLI stack).
+[auth.sms]
+enable_signup = true
+enable_confirmations = true
+provider = "twilio"
+
+[auth.sms.twilio]
+account_sid = "env(TWILIO_ACCOUNT_SID)"
+auth_token = "env(TWILIO_AUTH_TOKEN)"
+message_service_sid = "env(TWILIO_MESSAGE_SERVICE_SID)"
+
+# Local/CI only — lets the OTP flow be exercised end-to-end without a real
+# Twilio account or SMS spend. Fixed test numbers map to fixed codes; add
+# more pairs here as needed for testing. Has no effect on a hosted project.
+[auth.sms.test_otp]
+"+201000000001" = "123456"
 
 [storage]
 enabled = true

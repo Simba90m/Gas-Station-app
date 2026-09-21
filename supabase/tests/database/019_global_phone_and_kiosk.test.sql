@@ -1,17 +1,21 @@
 -- Phase 7.3 follow-up: global (non-Egypt-only) phone numbers +
--- kiosk_join_queue()/kiosk_create_booking()/customer_phone_registered().
+-- customer_phone_registered().
 --
 -- Covers: the relaxed E.164 CHECK constraint accepts a foreign number and
 -- still rejects garbage, the new platform-wide unique index rejects a
--- duplicate phone, customer_phone_registered() is boolean-only and
--- CUSTOMER-scoped, and the kiosk_* functions (tested as the actual
--- service_role — not postgres, which would bypass the GRANT check
--- entirely and prove nothing) create a real queue entry/booking for a
--- CUSTOMER id and reject a staff id. A light regression check confirms
--- create_booking()/join_queue()'s own authenticated-only entry points
--- still work after being split into _core + wrapper.
+-- duplicate phone, and customer_phone_registered() is boolean-only and
+-- CUSTOMER-scoped. A light regression check confirms create_booking()/
+-- join_queue()'s own authenticated-only entry points still work after
+-- being split into _core + wrapper.
+--
+-- The kiosk_join_queue()/kiosk_create_booking()/kiosk_queue_status()
+-- coverage this file originally had was removed along with those functions
+-- themselves — see
+-- supabase/migrations/20240101000270_customer_dual_channel_verification.sql
+-- and 020_customer_dual_channel_verification.test.sql (which covers their
+-- authenticated-session-based replacement, get_queue_ticket_status()).
 BEGIN;
-SELECT plan(19);
+SELECT plan(8);
 
 -- Privileged fixture setup (see 003_rls_customer_isolation.test.sql for why).
 SET LOCAL ROLE postgres;
@@ -29,9 +33,6 @@ INSERT INTO public.station_operating_hours (station_id, day_of_week, opens_at, c
 VALUES ('a0000000-0000-0000-0000-000000019010', 1, '06:00', '22:00');
 INSERT INTO public.service_operating_hours (station_service_id, day_of_week, opens_at, closes_at)
 VALUES ('a0000000-0000-0000-0000-000000019030', 1, '06:00', '22:00');
-
-INSERT INTO public.queues (id, station_id, station_service_id, is_open)
-VALUES ('a0000000-0000-0000-0000-000000019040', 'a0000000-0000-0000-0000-000000019010', 'a0000000-0000-0000-0000-000000019030', true);
 
 INSERT INTO auth.users (id, email) VALUES ('a0000000-0000-0000-0000-000000019050', 'phone-customer1@example.com');
 INSERT INTO auth.users (id, email) VALUES ('a0000000-0000-0000-0000-000000019051', 'phone-customer2@example.com');
@@ -91,67 +92,7 @@ SELECT is(
 RESET ROLE;
 
 -- ----------------------------------------------------------------------
--- 4. kiosk_join_queue() / kiosk_queue_status() — tested as the real
--- service_role (not postgres, which would bypass the GRANT entirely).
--- ----------------------------------------------------------------------
-SET LOCAL ROLE service_role;
-
-SELECT throws_ok(
-  format($$ SELECT public.kiosk_join_queue('%s', 'a0000000-0000-0000-0000-000000019030') $$, 'a0000000-0000-0000-0000-000000019052'),
-  NULL::char(5), NULL,
-  'kiosk_join_queue() rejects a staff (non-CUSTOMER) id'
-);
-
-CREATE TEMP TABLE t_kiosk_entry1 AS
-SELECT * FROM public.kiosk_join_queue('a0000000-0000-0000-0000-000000019050', 'a0000000-0000-0000-0000-000000019030');
-SELECT is((SELECT position FROM t_kiosk_entry1), 1, 'kiosk_join_queue() creates the first entry at position 1');
-SELECT is((SELECT status FROM t_kiosk_entry1), 'WAITING'::public.queue_status, 'kiosk_join_queue() entry starts WAITING');
-
-CREATE TEMP TABLE t_kiosk_status1 AS
-SELECT * FROM public.kiosk_queue_status((SELECT id FROM t_kiosk_entry1));
-SELECT is((SELECT rank FROM t_kiosk_status1), 0, 'kiosk_queue_status() reports rank 0 (nobody ahead) for the first entry');
-SELECT is((SELECT estimated_wait_minutes FROM t_kiosk_status1), 0, 'kiosk_queue_status() reports 0 estimated minutes for rank 0');
-
-CREATE TEMP TABLE t_kiosk_entry2 AS
-SELECT * FROM public.kiosk_join_queue('a0000000-0000-0000-0000-000000019051', 'a0000000-0000-0000-0000-000000019030');
-SELECT is((SELECT position FROM t_kiosk_entry2), 2, 'kiosk_join_queue() gives the second customer the next position');
-
-CREATE TEMP TABLE t_kiosk_status2 AS
-SELECT * FROM public.kiosk_queue_status((SELECT id FROM t_kiosk_entry2));
-SELECT is((SELECT rank FROM t_kiosk_status2), 1, 'kiosk_queue_status() reports rank 1 (one ahead) for the second entry');
-SELECT is(
-  (SELECT estimated_wait_minutes FROM t_kiosk_status2), 15,
-  'kiosk_queue_status() estimates rank * service duration (1 * 15 minutes)'
-);
-
--- ----------------------------------------------------------------------
--- 5. kiosk_create_booking() — same rejection for a non-CUSTOMER id, and a
--- real CONFIRMED booking for a valid one.
--- ----------------------------------------------------------------------
-SELECT throws_ok(
-  format(
-    $$ SELECT public.kiosk_create_booking('%s', 'a0000000-0000-0000-0000-000000019010', 'a0000000-0000-0000-0000-000000019020', '2024-01-08 10:00:00'::timestamp AT TIME ZONE 'Africa/Cairo') $$,
-    'a0000000-0000-0000-0000-000000019052'
-  ),
-  NULL::char(5), NULL,
-  'kiosk_create_booking() rejects a staff (non-CUSTOMER) id'
-);
-
-CREATE TEMP TABLE t_kiosk_booking1 AS
-SELECT * FROM public.kiosk_create_booking(
-  'a0000000-0000-0000-0000-000000019050', 'a0000000-0000-0000-0000-000000019010',
-  'a0000000-0000-0000-0000-000000019020', '2024-01-08 10:00:00'::timestamp AT TIME ZONE 'Africa/Cairo'
-);
-SELECT is((SELECT status FROM t_kiosk_booking1), 'CONFIRMED'::public.booking_status, 'kiosk_create_booking() creates a CONFIRMED booking for a real customer id');
-SELECT is(
-  (SELECT customer_id FROM t_kiosk_booking1), 'a0000000-0000-0000-0000-000000019050'::uuid,
-  'kiosk_create_booking() records the booking under the resolved customer id'
-);
-
-RESET ROLE;
-
--- ----------------------------------------------------------------------
--- 6. Regression: create_booking()/join_queue()'s own authenticated-only
+-- 4. Regression: create_booking()/join_queue()'s own authenticated-only
 -- entry points still behave exactly as before the _core split.
 -- ----------------------------------------------------------------------
 SET LOCAL ROLE authenticated;

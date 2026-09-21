@@ -55,6 +55,11 @@ export interface Database {
           role: UserRole;
           full_name: string;
           phone: string | null;
+          // Mirrors auth.users.email, but only once Supabase has confirmed
+          // it (sync_profile_email() trigger) — see
+          // supabase/migrations/20240101000270_customer_dual_channel_verification.sql.
+          // NULL means email verification hasn't been completed yet.
+          email: string | null;
           preferred_locale: "en" | "ar";
           avatar_url: string | null;
           is_active: boolean;
@@ -70,13 +75,18 @@ export interface Database {
           role?: UserRole;
           full_name: string;
           phone?: string | null;
+          email?: string | null;
           preferred_locale?: "en" | "ar";
           avatar_url?: string | null;
           is_active?: boolean;
         };
-        // role/is_active are intentionally not updatable directly — see
-        // the column GRANT in supabase/migrations/20240101000110_rls_identity.sql
-        // (only set_profile_role()/set_profile_active() can change them).
+        // role/is_active/email are intentionally not updatable directly —
+        // see the column GRANT in
+        // supabase/migrations/20240101000110_rls_identity.sql (role/
+        // is_active only change via set_profile_role()/set_profile_active())
+        // and sync_profile_email() in
+        // supabase/migrations/20240101000270_customer_dual_channel_verification.sql
+        // (email only changes once Supabase itself confirms it via OTP).
         Update: {
           full_name?: string;
           phone?: string | null;
@@ -677,39 +687,22 @@ export interface Database {
         Args: { p_phone: string };
         Returns: boolean;
       };
-      // SECURITY DEFINER, service_role-only. Same booking-creation core as
-      // create_booking(), different (sessionless) authorization: p_customer_id
-      // must be a real CUSTOMER profile, not owns_customer_row()/
-      // is_station_staff() — see
-      // supabase/migrations/20240101000260_global_phone_and_kiosk.sql for why
-      // the public kiosk flow never establishes a browser session.
-      kiosk_create_booking: {
-        Args: {
-          p_customer_id: string;
-          p_station_id: string;
-          p_service_id: string;
-          p_start_at: string;
-          p_employee_id?: string | null;
-          p_resource_id?: string | null;
-          p_notes?: string | null;
-        };
-        Returns: Database["public"]["Tables"]["bookings"]["Row"];
+      // Read-only, anon-reachable. Mirrors customer_phone_registered()
+      // exactly — see
+      // supabase/migrations/20240101000270_customer_dual_channel_verification.sql.
+      customer_email_registered: {
+        Args: { p_email: string };
+        Returns: boolean;
       };
-      // SECURITY DEFINER, service_role-only. Same queue-join core as
-      // join_queue(), sessionless authorization (CUSTOMER profile check
-      // instead of owns_customer_row()/is_station_staff()).
-      kiosk_join_queue: {
-        Args: { p_customer_id: string; p_station_service_id: string };
-        Returns: Database["public"]["Tables"]["queue_entries"]["Row"];
-      };
-      // Read-only, service_role-only. queue_position/status plus a derived
-      // rank (how many WAITING/CALLED entries are ahead in the same queue)
-      // and a simple estimated_wait_minutes (rank * that service's
-      // duration) — used both right after kiosk_join_queue() and for later
-      // polling. Named queue_position, not position — POSITION is a
-      // reserved SQL keyword and can't be an unquoted RETURNS TABLE column
-      // name (see supabase/migrations/20240101000260_global_phone_and_kiosk.sql).
-      kiosk_queue_status: {
+      // SECURITY DEFINER, authenticated-only. Authorization mirrors
+      // create_booking()/join_queue() (the entry's own customer, or staff at
+      // that queue's station) — replaces the former service-role-only
+      // kiosk_queue_status() now that the public join flow uses a real
+      // session (see
+      // supabase/migrations/20240101000270_customer_dual_channel_verification.sql).
+      // Named queue_position, not position — POSITION is a reserved SQL
+      // keyword and can't be an unquoted RETURNS TABLE column name.
+      get_queue_ticket_status: {
         Args: { p_queue_entry_id: string };
         Returns: {
           id: string;

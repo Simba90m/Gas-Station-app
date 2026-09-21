@@ -98,27 +98,11 @@ UNION ALL
 SELECT '20000000-0000-0000-0000-000000000041'::uuid, d, '18:00'::time, '04:00'::time FROM generate_series(0, 6) AS d
 ON CONFLICT (employee_id, day_of_week) DO NOTHING;
 
--- Car wash capabilities — employee_service_capabilities was previously left
--- unseeded even though get_available_slots()/available_employees_for_slot()
--- (supabase/migrations/20240101000230_booking_engine.sql) INNER JOINs
--- against it for any service with requires_employee_selection = true (both
--- car wash tiers). With this table empty, that join always eliminated every
--- candidate, so get_available_slots() returned zero rows for car wash at
--- every station, every date, regardless of operating hours/resources/working
--- hours all being correctly configured — reproduced and confirmed via a
--- local Postgres run before this fix. Matches each employee's own bio above
--- and the wash tiers their station actually offers (03_services.sql):
--- Station 1 and 3 offer both tiers, Station 2 only Standard.
-INSERT INTO public.employee_service_capabilities (employee_id, service_id)
-VALUES
-  ('20000000-0000-0000-0000-000000000021', '40000000-0000-0000-0000-000000000002'), -- Ahmed (Station 1): Car Wash Standard
-  ('20000000-0000-0000-0000-000000000021', '40000000-0000-0000-0000-000000000003'), -- Ahmed (Station 1): Car Wash Premium
-  ('20000000-0000-0000-0000-000000000022', '40000000-0000-0000-0000-000000000002'), -- Karim (Station 1): Car Wash Standard
-  ('20000000-0000-0000-0000-000000000022', '40000000-0000-0000-0000-000000000003'), -- Karim (Station 1): Car Wash Premium
-  ('20000000-0000-0000-0000-000000000031', '40000000-0000-0000-0000-000000000002'), -- Sara (Station 2): Car Wash Standard (only tier offered there)
-  ('20000000-0000-0000-0000-000000000041', '40000000-0000-0000-0000-000000000002'), -- Omar (Station 3): Car Wash Standard
-  ('20000000-0000-0000-0000-000000000041', '40000000-0000-0000-0000-000000000003')  -- Omar (Station 3): Car Wash Premium
-ON CONFLICT (employee_id, service_id) DO NOTHING;
+-- Car wash capabilities (employee_service_capabilities) are seeded in
+-- 03_services.sql, not here — that table's service_id foreign key needs
+-- public.services to exist first, and 03_services.sql is where those rows
+-- get created; seed files run in filename order, so 02 running before 03
+-- means the service rows don't exist yet at this point.
 
 -- A couple of demo shifts, including one still active (no ended_at) to show
 -- what "currently on shift" looks like. shifts has no natural unique
