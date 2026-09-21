@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState, useTransition } from "react";
+import { startTransition, useActionState, useEffect, useRef, useState, useTransition, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { addCapabilityAction, removeCapabilityAction, type EmployeeActionState } from "../actions";
@@ -52,9 +52,9 @@ export function CapabilitiesPanel({
   const [state, formAction, isPending] = useActionState(addCapabilityAction, INITIAL_STATE);
 
   // Controlled <select>, same reasoning as StationAssignmentsPanel: value
-  // lives in this state (updated by onChange), the form submits that exact
-  // value, and it's reset back to the placeholder only once a submission
-  // that was actually pending finishes with no error.
+  // lives in this state (updated by onChange), and it's reset back to the
+  // placeholder only once a submission that was actually pending finishes
+  // with no error.
   const [selectedServiceId, setSelectedServiceId] = useState("");
   const wasPending = useRef(false);
 
@@ -64,6 +64,24 @@ export function CapabilitiesPanel({
     }
     wasPending.current = isPending;
   }, [isPending, state]);
+
+  // Submission builds FormData explicitly from selectedServiceId/employeeId
+  // — known-good React state — and hands it directly to formAction, instead
+  // of relying on the browser reading the <select>'s DOM value via a native
+  // <form action={formAction}> submission. See StationAssignmentsPanel for
+  // the full reasoning — this is the same fix, same bug class. Wrapped in
+  // startTransition since formAction is being called directly rather than
+  // via <form action={formAction}> — without it, isPending never updates.
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedServiceId) return;
+    const formData = new FormData();
+    formData.set("employee_id", employeeId);
+    formData.set("service_id", selectedServiceId);
+    startTransition(() => {
+      formAction(formData);
+    });
+  }
 
   return (
     <div>
@@ -96,7 +114,7 @@ export function CapabilitiesPanel({
       </div>
 
       {available.length > 0 ? (
-        <form action={formAction} className="mt-4 flex items-end gap-3">
+        <form onSubmit={handleSubmit} className="mt-4 flex items-end gap-3">
           <input type="hidden" name="employee_id" value={employeeId} />
           <div className="flex-1 max-w-xs">
             <Label htmlFor="service_id">Add a service capability</Label>

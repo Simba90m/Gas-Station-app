@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState, useTransition } from "react";
+import { startTransition, useActionState, useEffect, useRef, useState, useTransition, type FormEvent } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -53,14 +53,11 @@ export function StationAssignmentsPanel({
 }) {
   const [state, formAction, isPending] = useActionState(assignStationAction, INITIAL_STATE);
 
-  // The <select> below is a CONTROLLED component: its value lives in this
-  // state, updated by onChange, and the form submits that exact value (via
-  // the select's `value` prop, which keeps the DOM in sync with this state
-  // rather than relying on an uncontrolled default that a stray re-render
-  // could reset). wasPending tracks the previous isPending value across
-  // renders so the effect below can detect the exact "a submission just
-  // finished successfully" moment (isPending flips true -> false with no
-  // error) and reset the select back to the placeholder then — not on
+  // The <select> is a CONTROLLED component: its value lives in this state,
+  // updated by onChange. wasPending tracks the previous isPending value
+  // across renders so the effect below can detect the exact "a submission
+  // just finished successfully" moment (isPending flips true -> false with
+  // no error) and reset the select back to the placeholder then — not on
   // mount, and not while still pending.
   const [selectedStationId, setSelectedStationId] = useState("");
   const wasPending = useRef(false);
@@ -71,6 +68,26 @@ export function StationAssignmentsPanel({
     }
     wasPending.current = isPending;
   }, [isPending, state]);
+
+  // Submission builds FormData explicitly from selectedStationId/employeeId
+  // — known-good React state — and hands it directly to formAction, instead
+  // of relying on the browser reading the <select>'s DOM value via a native
+  // <form action={formAction}> submission. This removes the native
+  // FormData-from-form extraction as a dependency entirely, which is where
+  // the selected value was actually being lost. formAction is a
+  // useActionState dispatcher — calling it directly (not via <form
+  // action={formAction}>) needs an explicit startTransition wrapper, or
+  // isPending never updates (React warns about this at runtime otherwise).
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedStationId) return;
+    const formData = new FormData();
+    formData.set("employee_id", employeeId);
+    formData.set("station_id", selectedStationId);
+    startTransition(() => {
+      formAction(formData);
+    });
+  }
 
   return (
     <div>
@@ -110,7 +127,7 @@ export function StationAssignmentsPanel({
       </div>
 
       {available.length > 0 && (
-        <form action={formAction} className="mt-4 flex items-end gap-3">
+        <form onSubmit={handleSubmit} className="mt-4 flex items-end gap-3">
           <input type="hidden" name="employee_id" value={employeeId} />
           <div className="flex-1 max-w-xs">
             <Label htmlFor="station_id">Assign to a station</Label>
