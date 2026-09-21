@@ -79,7 +79,8 @@ export const addCapabilitySchema = z.object({
 // per row, matching the brief's own mockup exactly.
 export const addStationScheduleSchema = z
   .object({
-    station_id: z.string().trim().uuid("Choose a station."),
+    // .guid() not .uuid() — see assignStationSchema above for why.
+    station_id: z.string().trim().guid("Choose a station."),
     day_of_week: z.coerce.number().int().min(0, "Choose a day.").max(6, "Choose a day."),
     starts_at: z.string().trim().min(1, "Start time is required."),
     ends_at: z.string().trim().min(1, "End time is required."),
