@@ -1,4 +1,5 @@
 import { BUSINESS_TIMEZONE, getOperatingDayRange } from "@gas-station/utils";
+import type { BookingStatus } from "@gas-station/types";
 import { createClient } from "@/lib/supabase/server";
 
 export interface DashboardMetrics {
@@ -98,4 +99,83 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
     averageRating,
     errors,
   };
+}
+
+export interface RecentActivityItem {
+  id: string;
+  bookingId: string;
+  status: BookingStatus;
+  changedAt: string;
+  customerName: string;
+  stationName: string;
+  serviceName: string;
+}
+
+const RECENT_ACTIVITY_LIMIT = 8;
+
+/**
+ * booking_status_history (supabase/migrations/20240101000050_bookings.sql)
+ * is populated automatically by record_booking_status_change() every time a
+ * booking's status changes — a ready-made activity log, not new schema.
+ * booking_status_history_select RLS
+ * (supabase/migrations/20240101000130_rls_bookings.sql) scopes it to
+ * exactly the same bookings this viewer can already see (their own
+ * station(s), or everything for OWNER/MANAGER), so no extra filtering is
+ * needed here. Flat queries + client-side joins, same convention as
+ * bookings/page.tsx — this hand-written Database type declares no
+ * Relationships, so an embedded select wouldn't type-check cleanly.
+ */
+export async function getRecentActivity(): Promise<RecentActivityItem[]> {
+  const supabase = await createClient();
+
+  const { data: history } = await supabase
+    .from("booking_status_history")
+    .select("id, booking_id, status, created_at")
+    .order("created_at", { ascending: false })
+    .limit(RECENT_ACTIVITY_LIMIT);
+
+  if (!history || history.length === 0) return [];
+
+  const bookingIds = [...new Set(history.map((h) => h.booking_id))];
+  const { data: bookings } = await supabase
+    .from("bookings")
+    .select("id, customer_id, station_id, station_service_id")
+    .in("id", bookingIds);
+
+  const stationServiceIds = [...new Set((bookings ?? []).map((b) => b.station_service_id))];
+  const customerIds = [...new Set((bookings ?? []).map((b) => b.customer_id))];
+  const stationIds = [...new Set((bookings ?? []).map((b) => b.station_id))];
+
+  const [{ data: stationServices }, { data: profiles }, { data: stations2 }] = await Promise.all([
+    supabase.from("station_services").select("id, service_id").in("id", stationServiceIds),
+    supabase.from("profiles").select("id, full_name").in("id", customerIds),
+    supabase.from("stations").select("id, name_en").in("id", stationIds),
+  ]);
+
+  const serviceIds = [...new Set((stationServices ?? []).map((ss) => ss.service_id))];
+  const { data: services } = await supabase.from("services").select("id, name_en").in("id", serviceIds);
+
+  const bookingById = new Map((bookings ?? []).map((b) => [b.id, b]));
+  const serviceIdByStationService = new Map((stationServices ?? []).map((ss) => [ss.id, ss.service_id]));
+  const serviceNameById = new Map((services ?? []).map((s) => [s.id, s.name_en]));
+  const profileNameById = new Map((profiles ?? []).map((p) => [p.id, p.full_name]));
+  const stationNameById = new Map((stations2 ?? []).map((s) => [s.id, s.name_en]));
+
+  return history.flatMap((h): RecentActivityItem[] => {
+    const booking = bookingById.get(h.booking_id);
+    if (!booking) return []; // RLS hid the booking itself (shouldn't happen given the policy above, but never show an orphaned row)
+
+    const serviceId = serviceIdByStationService.get(booking.station_service_id);
+    return [
+      {
+        id: h.id,
+        bookingId: h.booking_id,
+        status: h.status,
+        changedAt: h.created_at,
+        customerName: profileNameById.get(booking.customer_id) ?? "Unknown customer",
+        stationName: stationNameById.get(booking.station_id) ?? "Unknown station",
+        serviceName: (serviceId && serviceNameById.get(serviceId)) ?? "Unknown service",
+      },
+    ];
+  });
 }
