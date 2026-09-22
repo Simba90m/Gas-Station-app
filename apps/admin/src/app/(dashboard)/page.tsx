@@ -30,6 +30,7 @@ export default async function DashboardPage() {
         <StatCard
           label="Average rating"
           value={metrics.averageRating !== null ? metrics.averageRating.toFixed(1) : null}
+          href="/feedback"
         />
       </div>
 

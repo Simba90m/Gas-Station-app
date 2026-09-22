@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { href: "/stations", label: "Stations" },
   { href: "/employees", label: "Employees" },
   { href: "/bookings", label: "Bookings" },
+  { href: "/feedback", label: "Feedback" },
   { href: "/join-qr", label: "QR Code" },
 ] as const;
 
