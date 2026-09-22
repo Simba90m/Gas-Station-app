@@ -32,3 +32,17 @@ export const ADMIN_ROLES: readonly UserRole[] = ["OWNER", "MANAGER", "STATION_MA
 export function isAdminRole(role: UserRole): boolean {
   return ADMIN_ROLES.includes(role);
 }
+
+/**
+ * Mirrors the DB's is_owner_or_manager() (see
+ * supabase/migrations/20240101000070_auth_handlers.sql) — for a feature
+ * that needs "all-station access" specifically, as opposed to a
+ * station-scoped STATION_MANAGER (see is_station_manager_of() in
+ * supabase/migrations/20240101000340_feedback_replies.sql for that case —
+ * called via RPC rather than re-derived here, since it depends on which
+ * station is involved). UI/UX gating only; RLS is still what actually
+ * enforces it server-side.
+ */
+export function isOwnerOrManager(role: UserRole): boolean {
+  return role === "OWNER" || role === "MANAGER";
+}

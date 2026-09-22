@@ -668,6 +668,30 @@ export interface Database {
         };
         Relationships: [];
       };
+      // See supabase/migrations/20240101000340_feedback_replies.sql.
+      // Replies are immutable in practice — no UPDATE/DELETE RLS policy
+      // exists for `authenticated` — but Update is still typed (as the real
+      // generator would) to match GenericTable's shape.
+      feedback_replies: {
+        Row: {
+          id: string;
+          feedback_id: string;
+          responded_by: string | null;
+          message: string;
+          created_at: string;
+        };
+        // responded_by is trigger-derived (set_feedback_reply_responder,
+        // BEFORE INSERT) from auth.uid() — a client may send it, but the
+        // trigger always overwrites it before the row is stored.
+        Insert: {
+          id?: string;
+          feedback_id: string;
+          responded_by?: string | null;
+          message: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["feedback_replies"]["Insert"]>;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
@@ -772,6 +796,16 @@ export interface Database {
           rank: number;
           estimated_wait_minutes: number;
         }[];
+      };
+      // Read-only, authenticated-only, SECURITY DEFINER. true for OWNER/
+      // MANAGER (any station) or a STATION_MANAGER assigned to p_station_id
+      // — see supabase/migrations/20240101000340_feedback_replies.sql.
+      // Called from the admin app to get the same station-scoped
+      // authorization answer feedback_replies_insert's RLS enforces,
+      // without re-implementing the assignment check in TypeScript.
+      is_station_manager_of: {
+        Args: { p_station_id: string };
+        Returns: boolean;
       };
     };
   };

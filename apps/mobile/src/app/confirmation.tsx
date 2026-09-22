@@ -44,6 +44,7 @@ export default function ConfirmationScreen() {
 
       {booking.isSuccess && booking.data && booking.data.status === "COMPLETED" && (
         <BookingCompletedView
+          bookingId={booking.data.id}
           stationName={locale === "ar" ? booking.data.stationNameAr : booking.data.stationNameEn}
           serviceName={locale === "ar" ? booking.data.serviceNameAr : booking.data.serviceNameEn}
           price={booking.data.price}

@@ -14,6 +14,11 @@ const en = {
   "home.title": "Gas Station",
   "home.subtitle": "Book a service or join the walk-in queue at any of our stations.",
   "home.getStarted": "Get Started",
+  "home.myFeedback": "My Feedback",
+
+  "myFeedback.title": "My Feedback",
+  "myFeedback.empty": "You haven't submitted any feedback yet.",
+  "myFeedback.errorLoading": "Couldn't load your feedback.",
 
   "stations.title": "Choose your station",
   "stations.empty": "No stations are available right now.",
@@ -73,6 +78,17 @@ const en = {
   "confirmation.completedMessage": "Thank you for using our service!",
   "confirmation.price": "Price",
   "confirmation.backToHome": "Back to Home",
+
+  "feedback.prompt": "How was your visit?",
+  "feedback.commentPlaceholder": "Add a comment (optional)",
+  "feedback.submit": "Submit feedback",
+  "feedback.submitting": "Submitting...",
+  "feedback.errorSubmitting": "Couldn't submit your feedback — please try again.",
+  "feedback.errorLoading": "Couldn't load your feedback.",
+  "feedback.yourFeedback": "Your feedback",
+  "feedback.repliesTitle": "Replies",
+  "feedback.stationManagement": "Station Management",
+  "feedback.errorLoadingReplies": "Couldn't load replies.",
 
   "errors.network": "Check your connection and try again.",
   "errors.generic": "Something went wrong — please try again.",

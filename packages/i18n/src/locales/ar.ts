@@ -17,6 +17,11 @@ const ar = {
   "home.title": "محطة الوقود",
   "home.subtitle": "احجز خدمة أو انضم إلى طابور الانتظار في أي من محطاتنا.",
   "home.getStarted": "ابدأ الآن",
+  "home.myFeedback": "تقييماتي",
+
+  "myFeedback.title": "تقييماتي",
+  "myFeedback.empty": "لم ترسل أي تقييم بعد.",
+  "myFeedback.errorLoading": "تعذر تحميل تقييماتك.",
 
   "stations.title": "اختر محطتك",
   "stations.empty": "لا توجد محطات متاحة حاليًا.",
@@ -76,6 +81,17 @@ const ar = {
   "confirmation.completedMessage": "شكرًا لاستخدامك خدمتنا!",
   "confirmation.price": "السعر",
   "confirmation.backToHome": "العودة إلى الرئيسية",
+
+  "feedback.prompt": "كيف كانت زيارتك؟",
+  "feedback.commentPlaceholder": "أضف تعليقًا (اختياري)",
+  "feedback.submit": "إرسال التقييم",
+  "feedback.submitting": "جارٍ الإرسال...",
+  "feedback.errorSubmitting": "تعذر إرسال تقييمك — يرجى المحاولة مرة أخرى.",
+  "feedback.errorLoading": "تعذر تحميل تقييمك.",
+  "feedback.yourFeedback": "تقييمك",
+  "feedback.repliesTitle": "الردود",
+  "feedback.stationManagement": "إدارة المحطة",
+  "feedback.errorLoadingReplies": "تعذر تحميل الردود.",
 
   "errors.network": "تحقق من اتصالك وحاول مرة أخرى.",
   "errors.generic": "حدث خطأ ما — يرجى المحاولة مرة أخرى.",

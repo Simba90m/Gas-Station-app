@@ -114,6 +114,7 @@ export default function QueueScreen() {
         <ScreenHeader title={t("confirmation.queueTitle")} />
         {completedBooking.isSuccess && completedBooking.data ? (
           <BookingCompletedView
+            bookingId={completedBooking.data.id}
             stationName={locale === "ar" ? completedBooking.data.stationNameAr : completedBooking.data.stationNameEn}
             serviceName={locale === "ar" ? completedBooking.data.serviceNameAr : completedBooking.data.serviceNameEn}
             price={completedBooking.data.price}

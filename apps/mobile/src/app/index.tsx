@@ -36,7 +36,10 @@ export default function HomeScreen() {
           {t("home.subtitle")}
         </ThemedText>
       </View>
-      <PrimaryButton label={t("home.getStarted")} onPress={handleGetStarted} />
+      <View style={styles.actions}>
+        <PrimaryButton label={t("home.getStarted")} onPress={handleGetStarted} />
+        <PrimaryButton label={t("home.myFeedback")} variant="secondary" onPress={() => router.push("/my-feedback")} />
+      </View>
     </Screen>
   );
 }
@@ -46,4 +49,5 @@ const styles = StyleSheet.create({
   hero: { flex: 1, justifyContent: "center", gap: Spacing.two },
   title: { width: "100%" },
   subtitle: { width: "100%" },
+  actions: { gap: Spacing.two },
 });

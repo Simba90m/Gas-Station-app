@@ -1,11 +1,13 @@
 import { StyleSheet, View } from "react-native";
 import { CURRENCY } from "@gas-station/utils";
 import { ThemedText } from "@/components/themed-text";
+import { FeedbackSection } from "@/components/feedback-section";
 import { PrimaryButton } from "@/components/ui/primary-button";
 import { useLocale } from "@/lib/locale-context";
 import { Spacing } from "@/constants/theme";
 
 export interface BookingCompletedViewProps {
+  bookingId: string;
   stationName: string;
   serviceName: string;
   /** The booking's own historical price (see hooks/use-booking.ts) — never a live/recomputed catalog price. */
@@ -17,9 +19,11 @@ export interface BookingCompletedViewProps {
  * Shown in place of the normal status view, on both the "Start Now" (queue)
  * and "Book for Later" (booking) journeys, once their underlying booking
  * reaches COMPLETED — a distinct end state rather than just another row in
- * the status list. No payment/notification/feedback here yet, by design.
+ * the status list. No payment/notification here yet, by design; feedback
+ * (rate + comment, plus any management reply) is the one thing this screen
+ * does collect, via FeedbackSection below.
  */
-export function BookingCompletedView({ stationName, serviceName, price, onDone }: BookingCompletedViewProps) {
+export function BookingCompletedView({ bookingId, stationName, serviceName, price, onDone }: BookingCompletedViewProps) {
   const { t, isRTL } = useLocale();
   const textAlign = isRTL ? "right" : "left";
 
@@ -37,6 +41,8 @@ export function BookingCompletedView({ stationName, serviceName, price, onDone }
         <Row label={t("confirmation.service")} value={serviceName} />
         <Row label={t("confirmation.price")} value={`${price} ${CURRENCY}`} />
       </View>
+
+      <FeedbackSection bookingId={bookingId} />
 
       <PrimaryButton label={t("confirmation.backToHome")} onPress={onDone} />
     </View>
